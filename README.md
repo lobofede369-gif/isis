@@ -5,16 +5,39 @@ Claude Sonnet 5.5 vía FableAI, revisa a Orlando (su bot de WhatsApp de
 reclutamiento en n8n), consulta el clima en vivo y aprende de lo que le
 enseñan.
 
+## Interfaz (estilo JARVIS, minimalista)
+
+La pantalla principal es solo cuatro cosas: el orbe JARVIS (una imagen
+de núcleo brillante azul con anillos HUD, `public/isis-orb.jpg`, 768 px,
+~150 KB), una sola línea de estado, la conversación colapsada en una
+línea y un dock mínimo abajo (escribir + enviar + micrófono). Todo lo
+demás vive en el **botón hamburguesa ☰** (arriba a la izquierda), que
+abre un menú lateral con todos los módulos: **Configuración** (claves),
+**Voz de Isis** (voz del teléfono, voz de Kokoro, descarga de Kokoro,
+"Probar voz" y escucha continua), **Memoria** (lo aprendido, resumen y
+respaldo), **Contactos**, **Orlando · Bot PCN** y **Análisis**. Elegir
+un módulo cierra el menú y lo abre en pantalla completa; "← Volver" (o
+la tecla Escape) lo cierra y vuelve a la pantalla principal. Tocar
+fuera del menú también lo cierra.
+
+El orbe refleja el estado de Isis aunque la imagen sea estática: un
+anillo luminoso gira alrededor de la imagen (más rápido al pensar o
+hablar), el brillo cambia de color e intensidad según su ánimo (el
+sistema de ánimo ya existía y se reutiliza) y la imagen pulsa al ritmo
+de la voz mientras habla. Nada se eliminó: todo lo que antes estaba en
+la pantalla principal se reubicó dentro del menú.
+
 ## Qué hace
 
 - **Voz**: toca el círculo y habla; Isis contesta por voz. Habla con
   Kokoro-82M, un modelo de voz gratis y de código abierto que corre
   directo en el teléfono (kokoro-js + ONNX): sin clave, sin servidor y
   sin costo por uso. No se descarga solo al abrir la app: se baja
-  cuando Santiago toca "Descargar voz de Isis" en Configuración
-  (~88 MB, una sola vez) y luego queda guardado en el navegador;
+  cuando Santiago toca "Descargar voz de Isis" en el menú ☰ → Voz de
+  Isis (~88 MB, una sola vez) y luego queda guardado en el navegador;
   mientras tanto, o si Kokoro falla, Isis usa la voz del teléfono
-  (Web Speech API), así nunca se queda muda. En **Configuración** se elige su voz de Kokoro: solo hay 3 en
+  (Web Speech API), así nunca se queda muda. En el menú ☰ → **Voz de
+  Isis** se elige su voz de Kokoro: solo hay 3 en
   español — Dora (femenina, por defecto), Alex y Santa (masculinas) —
   con botón "Probar voz"; y también se elige la voz del teléfono (lista
   de voces en español del teléfono: por defecto toma la más femenina y
@@ -44,8 +67,8 @@ enseñan.
   El panel de conversación es plegable y viene colapsado por defecto:
   solo muestra la última respuesta de Isis en una línea; al tocar la
   cabecera "Conversación" se expande y se ve el chat completo. El dock
-  (Orlando, Análisis, micrófono, Voz, Ajustes) y el campo para escribir
-  quedan siempre visibles.
+  mínimo (escribir + enviar + micrófono) queda siempre visible; todo
+  lo demás vive en el botón hamburguesa ☰ (ver **Interfaz**).
 - **Orlando**: revisa en vivo las ejecuciones de n8n y si el workflow
   "WhatsApp PCN - Respuestas naturales" está activo. Sin clave de n8n,
   muestra el último dato conocido, etiquetado como tal.
@@ -104,16 +127,16 @@ teléfono.
 
 1. Al abrir Isis NO se descarga nada: la app arranca ligera. La voz se
    descarga solo cuando Santiago toca **"Descargar voz de Isis"** en
-   Configuración (primera vez ~88 MB: el modelo cuantizado q8 desde
+   el menú ☰ → Voz de Isis (primera vez ~88 MB: el modelo cuantizado q8 desde
    Hugging Face, `onnx-community/Kokoro-82M-v1.0-ONNX`); luego queda
    guardada en la caché del navegador y ya no se descarga. Mientras
    descarga, Isis muestra "Descargando la voz de Isis por primera
    vez…" y sigue hablando con la voz del teléfono; el chat no se
    bloquea. Si Kokoro aún no está descargada, Isis habla con la voz
    del teléfono de inmediato y deja una nota breve junto al orbe
-   ("La voz de Isis aún no está descargada — descárgala en
-   Configuración").
-2. En **Configuración → Voz de Isis (Kokoro, gratis)** se elige la voz:
+   ("La voz de Isis aún no está descargada — descárgala en el menú ☰,
+   en Voz de Isis").
+2. En el menú ☰ → **Voz de Isis** se elige la voz:
    solo hay 3 en español — `ef_dora` (Dora, femenina, por defecto),
    `em_alex` (Alex, masculina) y `em_santa` (Santa, masculina,
    navideña). La elección se guarda en el navegador
@@ -152,8 +175,7 @@ Isis recuerda lo que hablan, sin que Santiago tenga que enseñárselo todo:
   hechos a mano en "Lo que Isis ha aprendido" y borrarlos uno por uno.
 - **Resumen**: cuando la conversación ya es larga y cubre varios temas,
   Claude deja un resumen actualizado con `[resumen: ...]` (2 a 4 líneas de
-  lo más importante). Se ve en la sección **Memoria** de la tarjeta de
-  hechos.
+  lo más importante). Se ve en el menú ☰ → **Memoria**.
 - **Historial**: los últimos 12 intercambios se guardan y al recargar la
   página la conversación se ve continuar, como burbujas. Las respuestas
   que son acciones (mandar un SMS, operar El Mitote) no se guardan como
@@ -165,7 +187,7 @@ persistente. **Límites**: 60 hechos (si se pasa, se borra el más viejo),
 12 intercambios, resumen de ~800 caracteres, 250 caracteres por lado de
 cada intercambio.
 
-**Respaldo**: en la sección **Memoria** hay tres botones — **Exportar
+**Respaldo**: en el menú ☰ → **Memoria** hay tres botones — **Exportar
 memoria** (descarga un JSON con hechos, resumen e historial),
 **Importar memoria** (carga un respaldo y reemplaza lo guardado; si el
 archivo no es válido, avisa y no borra nada) y **Borrar memoria** (pide
@@ -200,7 +222,7 @@ cada 5 minutos.
 
 ## Dónde van las claves
 
-Dentro de la app, en **Configuración**, Santiago pega una sola vez:
+Dentro de la app, en el menú ☰ → **Configuración**, Santiago pega una sola vez:
 
 - **Clave de FableAI** (Claude): se crea en el panel de FableAI → API Keys.
 - **Clave de API de n8n**: se crea en n8n → Settings → n8n API.
