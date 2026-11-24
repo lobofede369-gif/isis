@@ -57,8 +57,10 @@
         <span class="reactor-wave w2" aria-hidden="true"></span>
         <span class="reactor-wave w3" aria-hidden="true"></span>
       </button>
-      <p id="orb-status" class="orb-status">Toca el círculo para hablar</p>
-      <p id="orb-mood" class="orb-mood" hidden></p>
+      <div class="orb-status-line">
+        <p id="orb-status" class="orb-status">Toca el círculo para hablar</p>
+        <p id="orb-mood" class="orb-mood" hidden></p>
+      </div>
       <div id="wake-row" class="wake-row">
         <label class="wake-toggle">
           <input type="checkbox" id="wake-toggle" checked />
@@ -67,7 +69,7 @@
         </label>
         <button id="btn-wake" class="small-btn" type="button" hidden>Activar escucha</button>
       </div>
-      <p class="hint wake-hint">Solo escucha mientras esta página está abierta. Di “Isis” para activarme; se enciende con tu primer toque y sigue sola.</p>
+      <p class="hint wake-hint">Solo escucha con esta página abierta · Di “Isis” para activarme.</p>
       <p id="voice-note" class="voice-note" hidden></p>
     </section>
 
@@ -78,10 +80,17 @@
       para que pueda pensar en vivo con Claude.
     </div>
 
-    <!-- Conversación -->
-    <section class="card">
-      <h2>Conversación</h2>
-      <div id="chat" class="chat"></div>
+    <!-- Conversación (plegable: colapsada por defecto, solo la última respuesta) -->
+    <section class="card chat-card collapsed" id="chat-card">
+      <button id="chat-toggle" class="chat-toggle" type="button" aria-expanded="false" aria-controls="chat-body">
+        <span class="chat-toggle-title">Conversación</span>
+        <span id="chat-preview" class="chat-preview" hidden></span>
+        <span class="chat-arrow" aria-hidden="true">▾</span>
+      </button>
+      <div id="chat-body" class="chat-body" hidden>
+        <div id="chat" class="chat"></div>
+        <p class="hint">Isis responde por voz. Las preguntas de clima usan el clima en vivo; nunca culpan a la clave de Claude.</p>
+      </div>
       <nav class="dock" aria-label="Accesos rápidos de Isis">
         <button id="dock-orlando" class="dock-btn" type="button" aria-label="Revisar Orlando">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="2.5" /><path d="M12 12 L19 5" /></svg>
@@ -107,7 +116,6 @@
         <input id="chat-input" type="text" placeholder="Escríbele a Isis…" autocomplete="off" />
         <button type="submit" class="send-btn" aria-label="Enviar">➤</button>
       </form>
-      <p class="hint">Isis responde por voz. Las preguntas de clima usan el clima en vivo; nunca culpan a la clave de Claude.</p>
     </section>
 
     <!-- Orlando -->
@@ -198,6 +206,11 @@
         <input id="cfg-textbee-device" type="text" placeholder="Pégalo aquí… (puedes dejarlo vacío)" autocomplete="off" />
         <span id="cfg-textbee-device-state" class="field-state">Sin guardar (opcional)</span>
       </label>
+      <label class="field">
+        <span>Clave de Google Cloud (voz natural)</span>
+        <input id="cfg-google" type="password" placeholder="Pégala aquí…" autocomplete="off" />
+        <span id="cfg-google-state" class="field-state">Sin guardar</span>
+      </label>
       <div class="field">
         <span>Voz de Isis</span>
         <div class="voice-row">
@@ -205,6 +218,10 @@
           <button id="btn-test-voice" class="small-btn" type="button">Probar voz</button>
         </div>
         <span id="voice-state" class="field-state">Buscando voces en español…</span>
+        <div class="voice-row">
+          <select id="google-voice-select" aria-label="Voz de Google"></select>
+        </div>
+        <span id="google-voice-state" class="field-state">Sin clave de Google.</span>
       </div>
       <div class="config-actions">
         <button id="btn-save-config" class="primary-btn">Guardar claves</button>
@@ -216,6 +233,7 @@
         La clave de API de n8n se crea en n8n → Settings → n8n API.
         El token de WhatsApp se consigue en Meta for Developers → tu app «PCN Bot» → WhatsApp → API Setup → Token de acceso.
         La clave de TextBee y el ID del dispositivo se consiguen en textbee.dev: crea una cuenta, instala la app en tu teléfono, agrega el dispositivo escaneando el QR y crea una API key. Sin el ID, Isis usa tu dispositivo por defecto.
+        La clave de Google se crea en console.cloud.google.com: crea un proyecto, activa la facturación con tarjeta (no se cobra dentro del límite gratis), habilita la API Cloud Text-to-Speech y crea una clave API restringida a esa API. Plan gratis: ~1 millón de caracteres al mes (Neural2/WaveNet), 4 millones (Standard).
       </p>
     </section>
   </main>

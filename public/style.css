@@ -136,7 +136,7 @@ body {
 main { max-width: 640px; margin: 0 auto; padding: 8px 16px 32px; position: relative; z-index: 1; }
 
 /* ---------------------------------------------------------- Orbe reactor (estilo JARVIS) */
-.orb-section { text-align: center; padding: 26px 0 8px; }
+.orb-section { text-align: center; padding: 14px 0 6px; }
 .orb {
   --orb-size: min(264px, 72vw);
   position: relative;
@@ -208,13 +208,18 @@ main { max-width: 640px; margin: 0 auto; padding: 8px 16px 32px; position: relat
   100% { transform: scale(1.9); opacity: 0; }
 }
 
+/* Una sola línea de estado: qué hace Isis + su ánimo, juntos */
+.orb-status-line {
+  display: flex; justify-content: center; align-items: baseline; gap: 8px;
+  margin: 12px 0 0; flex-wrap: wrap;
+}
+.orb-status-line .orb-status, .orb-status-line .orb-mood { margin: 0; }
 .orb-status {
   font-family: var(--font-display);
   color: var(--neon);
   letter-spacing: 4px;
   text-transform: uppercase;
   font-size: 0.78rem;
-  margin: 20px 0 4px;
   text-shadow: 0 0 12px var(--neon-glow);
 }
 .voice-note { color: var(--muted); font-size: 0.9rem; margin: 4px 0; }
@@ -225,7 +230,6 @@ main { max-width: 640px; margin: 0 auto; padding: 8px 16px 32px; position: relat
   letter-spacing: 4px;
   text-transform: uppercase;
   font-size: 0.72rem;
-  margin: 6px 0 0;
   color: var(--neon);
   text-shadow: 0 0 10px var(--neon-glow);
 }
@@ -345,7 +349,24 @@ main { max-width: 640px; margin: 0 auto; padding: 8px 16px 32px; position: relat
   font: inherit; cursor: pointer; text-decoration: underline; padding: 0;
 }
 
-/* ---------------------------------------------------------- Chat */
+/* ---------------------------------------------------------- Chat (plegable) */
+/* Cabecera/toggle: título + vista previa de la última respuesta + flecha */
+.chat-toggle {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  background: none; border: none; cursor: pointer; padding: 2px 0 0;
+  color: var(--neon-bright); font-family: var(--font-display);
+  font-size: 0.92rem; font-weight: 700; letter-spacing: 2.5px; text-transform: uppercase;
+  text-shadow: 0 0 12px rgba(0, 212, 255, 0.5); text-align: left;
+}
+.chat-toggle-title { flex-shrink: 0; }
+.chat-preview {
+  flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+  font-family: var(--font-body); font-size: 0.9rem; font-weight: 400; letter-spacing: 0.3px; text-transform: none;
+  color: var(--muted); text-shadow: none;
+}
+.chat-arrow { flex-shrink: 0; font-size: 0.9rem; transition: transform 0.25s ease; }
+.chat-card.collapsed .chat-arrow { transform: rotate(-90deg); }
+.chat-body { margin-top: 10px; }
 .chat {
   display: flex; flex-direction: column; gap: 10px;
   max-height: 340px; overflow-y: auto; padding-right: 4px;
@@ -514,25 +535,25 @@ footer {
   box-shadow: 0 0 14px rgba(0, 212, 255, 0.35);
 }
 
-/* Escucha continua: interruptor y botón */
+/* Escucha continua: interruptor y botón (compactos) */
 .wake-row {
   display: flex; align-items: center; justify-content: center; gap: 12px;
-  margin-top: 14px; flex-wrap: wrap;
+  margin-top: 8px; flex-wrap: wrap;
 }
 .wake-toggle {
   display: flex; align-items: center; gap: 8px; cursor: pointer;
-  font-size: 0.9rem; letter-spacing: 1px; color: var(--muted);
+  font-size: 0.82rem; letter-spacing: 1px; color: var(--muted);
   text-transform: uppercase;
 }
 .wake-toggle input { display: none; }
 .wake-switch {
-  width: 40px; height: 22px; border-radius: 12px; position: relative; flex-shrink: 0;
+  width: 34px; height: 19px; border-radius: 12px; position: relative; flex-shrink: 0;
   background: rgba(0, 24, 48, 0.8); border: 1px solid rgba(0, 212, 255, 0.4);
   transition: background 0.25s ease, border-color 0.25s ease;
 }
 .wake-switch::after {
   content: ""; position: absolute; top: 2px; left: 2px;
-  width: 16px; height: 16px; border-radius: 50%;
+  width: 13px; height: 13px; border-radius: 50%;
   background: var(--muted);
   transition: transform 0.25s ease, background 0.25s ease;
 }
@@ -540,15 +561,15 @@ footer {
   background: rgba(0, 212, 255, 0.35); border-color: var(--neon);
 }
 .wake-toggle input:checked + .wake-switch::after {
-  transform: translateX(18px); background: var(--neon-bright);
+  transform: translateX(15px); background: var(--neon-bright);
   box-shadow: 0 0 10px var(--neon-glow);
 }
-.wake-hint { text-align: center; }
+.wake-hint { text-align: center; font-size: 0.8rem; margin: 6px 0 0; }
 
-/* ---------------------------------------------------------- Dock estilo JARVIS */
+/* ---------------------------------------------------------- Dock estilo JARVIS (compacto) */
 .dock {
   display: flex; align-items: flex-end; justify-content: space-between;
-  gap: 4px; margin: 14px 0 10px; padding: 16px 8px 8px;
+  gap: 4px; margin: 10px 0 8px; padding: 10px 6px 6px;
   background: linear-gradient(180deg, rgba(0, 30, 50, 0.55), rgba(1, 8, 18, 0.85));
   border: 1px solid rgba(25, 240, 208, 0.3);
   border-radius: 10px 10px 4px 4px;
@@ -561,16 +582,16 @@ footer {
   letter-spacing: 1.5px; text-transform: uppercase;
   opacity: 0.85; transition: opacity 0.2s ease, transform 0.2s ease, color 0.2s ease;
 }
-.dock-btn svg { width: 26px; height: 26px; }
+.dock-btn svg { width: 22px; height: 22px; }
 .dock-btn:hover, .dock-btn:active { opacity: 1; color: var(--teal-bright); transform: translateY(-2px); }
 .dock-btn:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
 .dock-mic {
-  flex: 0 0 64px; height: 64px; margin: 0 2px;
+  flex: 0 0 56px; height: 56px; margin: 0 2px;
   border-radius: 50%;
   border: 1px solid rgba(25, 240, 208, 0.65);
   background: radial-gradient(circle at 35% 30%, rgba(25, 240, 208, 0.35), rgba(2, 20, 38, 0.9) 70%);
   box-shadow: 0 0 22px rgba(25, 240, 208, 0.45), inset 0 0 14px rgba(25, 240, 208, 0.3);
   justify-content: center; color: var(--teal-bright);
 }
-.dock-mic svg { width: 30px; height: 30px; }
+.dock-mic svg { width: 26px; height: 26px; }
 .dock-mic:hover, .dock-mic:active { transform: translateY(-4px); }

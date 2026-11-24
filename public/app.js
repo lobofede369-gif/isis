@@ -11,6 +11,11 @@
   const LS_WHATSAPP = "isis_whatsapp_token";
   const LS_TEXTBEE = "isis_textbee_key";
   const LS_TEXTBEE_DEVICE = "isis_textbee_device";
+  const LS_GOOGLE = "isis_google_key";
+  const LS_GOOGLE_VOICE = "isis_google_voice";
+  // Voz de Google de por defecto: es-MX-Neural2-A (femenina, español de
+  // México, Neural2).
+  const GOOGLE_DEFAULT_VOICE = "es-MX-Neural2-A";
   const LS_FACTS = "isis_facts";
   const LS_HISTORY = "isis_history";
   const LS_SUMMARY = "isis_summary";
@@ -34,6 +39,10 @@
   const keyBanner = $("key-banner");
   const orlandoPanel = $("orlando-panel");
   const analysisBox = $("analysis");
+  const chatCard = $("chat-card");
+  const chatToggle = $("chat-toggle");
+  const chatBody = $("chat-body");
+  const chatPreview = $("chat-preview");
   const factsList = $("facts-list");
   const factForm = $("fact-form");
   const factInput = $("fact-input");
@@ -47,17 +56,19 @@
       whatsappToken: (localStorage.getItem(LS_WHATSAPP) || "").trim(),
       textbeeKey: (localStorage.getItem(LS_TEXTBEE) || "").trim(),
       textbeeDevice: (localStorage.getItem(LS_TEXTBEE_DEVICE) || "").trim(),
+      googleKey: (localStorage.getItem(LS_GOOGLE) || "").trim(),
     };
   }
 
   function refreshKeyUI() {
-    const { fableaiKey, n8nKey, whatsappToken, textbeeKey, textbeeDevice } =
+    const { fableaiKey, n8nKey, whatsappToken, textbeeKey, textbeeDevice, googleKey } =
       getKeys();
     const fState = $("cfg-fableai-state");
     const nState = $("cfg-n8n-state");
     const wState = $("cfg-whatsapp-state");
     const tState = $("cfg-textbee-state");
     const dState = $("cfg-textbee-device-state");
+    const eState = $("cfg-google-state");
     fState.textContent = fableaiKey ? "Guardada ✓" : "Sin guardar";
     fState.classList.toggle("ok", !!fableaiKey);
     nState.textContent = n8nKey ? "Guardada ✓" : "Sin guardar";
@@ -73,6 +84,10 @@
         ? "Guardado ✓"
         : "Sin guardar (opcional)";
       dState.classList.toggle("ok", !!textbeeDevice);
+    }
+    if (eState) {
+      eState.textContent = googleKey ? "Guardada ✓" : "Sin guardar";
+      eState.classList.toggle("ok", !!googleKey);
     }
     keyBanner.hidden = !!fableaiKey;
   }
@@ -580,6 +595,92 @@
     sel.disabled = false;
   }
 
+  // --- voces de Google Cloud TTS (cuando hay clave): se listan desde
+  // /api/voices, filtradas a español. Sin clave, el selector dice que
+  // falta y Isis usa la voz del teléfono.
+  let googleVoices = [];
+  let selectedGoogleVoice =
+    (localStorage.getItem(LS_GOOGLE_VOICE) || "").trim() ||
+    GOOGLE_DEFAULT_VOICE;
+  function googleVoiceLabel(v) {
+    const gender =
+      v.ssmlGender === "FEMALE"
+        ? "femenina"
+        : v.ssmlGender === "MALE"
+          ? "masculina"
+          : "";
+    const langs = Array.isArray(v.languageCodes)
+      ? v.languageCodes.join(", ")
+      : "";
+    const bits = [langs, gender].filter(Boolean);
+    return bits.length ? `${v.name} · ${bits.join(" · ")}` : v.name;
+  }
+  async function refreshGoogleVoices() {
+    const sel = $("google-voice-select");
+    const state = $("google-voice-state");
+    if (!sel) return;
+    const key = (localStorage.getItem(LS_GOOGLE) || "").trim();
+    sel.innerHTML = "";
+    if (!key) {
+      googleVoices = [];
+      if (state)
+        state.textContent =
+          "Sin clave de Google: Isis usa la voz del teléfono.";
+      sel.disabled = true;
+      const opt = document.createElement("option");
+      opt.textContent = "Falta la clave de Google";
+      sel.appendChild(opt);
+      return;
+    }
+    if (state) state.textContent = "Cargando voces de Google…";
+    sel.disabled = true;
+    try {
+      const res = await fetch(
+        `/api/voices?key=${encodeURIComponent(key)}`
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !Array.isArray(data.voices)) {
+        throw new Error(data?.error || "no voices");
+      }
+      // Solo español: es-MX, es-US y es-ES (la API trae todos los idiomas).
+      googleVoices = data.voices.filter(
+        (v) =>
+          v &&
+          v.name &&
+          Array.isArray(v.languageCodes) &&
+          v.languageCodes.some((lc) =>
+            ["es-mx", "es-us", "es-es"].includes(String(lc).toLowerCase())
+          )
+      );
+      if (googleVoices.length === 0) throw new Error("empty");
+      googleVoices.forEach((v) => {
+        const opt = document.createElement("option");
+        opt.value = v.name;
+        opt.textContent = googleVoiceLabel(v);
+        sel.appendChild(opt);
+      });
+      const saved = (localStorage.getItem(LS_GOOGLE_VOICE) || "").trim();
+      const pick =
+        googleVoices.find((v) => v.name === saved) ||
+        googleVoices.find((v) => v.name === GOOGLE_DEFAULT_VOICE) ||
+        googleVoices[0];
+      selectedGoogleVoice = pick.name;
+      sel.value = pick.name;
+      sel.disabled = false;
+      if (state)
+        state.textContent = `${googleVoices.length} voces de Google disponibles.`;
+    } catch (e) {
+      googleVoices = [];
+      sel.innerHTML = "";
+      const opt = document.createElement("option");
+      opt.textContent = "No se pudieron cargar las voces";
+      sel.appendChild(opt);
+      if (state)
+        state.textContent =
+          "No pude cargar las voces de Google. Isis usa la voz del teléfono.";
+    }
+  }
+
   // --- hablar: se respeta la puntuación. Cada respuesta se divide en
   // oraciones (. ! ?) y se habla una por una, con una pausa que depende
   // de cómo termina la oración, para que las comas y los puntos suenen
@@ -631,15 +732,90 @@
     const parts = clean.match(/[^.!?…]+[.!?…]["»”')]*|[^.!?…]+$/g) || [];
     return parts.map((s) => s.trim()).filter(Boolean);
   }
-  // speak(text, moodOverride): habla el texto con la prosodia del ánimo
-  // actual (o del ánimo que se le pase, como "alegre" para la prueba de
-  // voz). La prosodia se fija por mensaje completo, no por oración.
-  function speak(text, moodOverride) {
+  // --- audio de Google Cloud TTS: un solo elemento <audio> reutilizado.
+  let googleAudio = null;
+  let googleGen = 0;
+  function stopGoogleAudio() {
+    googleGen += 1;
+    if (googleAudio) {
+      try {
+        googleAudio.pause();
+      } catch (e) {}
+      googleAudio.src = "";
+      googleAudio = null;
+    }
+  }
+  // Limpieza al terminar de hablar (sirve para la voz del teléfono y
+  // para Google): se quita el estado "hablando" y vuelve la escucha.
+  function finishSpeaking() {
+    speakingNow = false;
+    orb.classList.remove("speaking");
+    orb.classList.remove("listening");
+    setOrbStatus(idleStatus());
+    setTimeout(maybeStartWake, 800);
+  }
+  // speak(text, moodOverride): con clave de Google usa esa voz
+  // natural; si no hay clave o Google falla, usa la voz del teléfono
+  // como siempre. Isis nunca se queda muda. Para Google la emoción
+  // la da la propia voz (no se toca pitch ni rate del audio).
+  async function speak(text, moodOverride) {
+    const clean = String(text || "").trim();
+    if (!clean) return;
+    // Cortar lo que esté sonando (sea del teléfono o de Google).
+    stopGoogleAudio();
+    if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+    speakGen += 1;
+    const key = (localStorage.getItem(LS_GOOGLE) || "").trim();
+    if (key) {
+      const ok = await speakGoogle(clean, key);
+      if (ok) return;
+      // Si Google falló, se cae a la voz del teléfono.
+    }
+    speakPhone(clean, moodOverride);
+  }
+  async function speakGoogle(text, key) {
+    try {
+      const res = await fetch("/api/tts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text,
+          googleKey: key,
+          voiceName: selectedGoogleVoice || GOOGLE_DEFAULT_VOICE,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.audioBase64) return false;
+      const gen = googleGen;
+      const audio = new Audio(`data:audio/mpeg;base64,${data.audioBase64}`);
+      googleAudio = audio;
+      audio.onplay = () => {
+        if (gen !== googleGen) return;
+        speakingNow = true;
+        orb.classList.add("speaking");
+        orb.classList.remove("listening");
+      };
+      const done = () => {
+        if (gen !== googleGen) return;
+        googleAudio = null;
+        finishSpeaking();
+      };
+      audio.onended = done;
+      audio.onerror = done;
+      await audio.play();
+      return true;
+    } catch (e) {
+      googleAudio = null;
+      return false;
+    }
+  }
+  // Voz del teléfono (speechSynthesis): habla el texto con la prosodia
+  // del ánimo actual (o del ánimo que se le pase, como "alegre" para la
+  // prueba de voz). La prosodia se fija por mensaje completo, no por oración.
+  function speakPhone(text, moodOverride) {
     if (!("speechSynthesis" in window)) return;
     const sentences = splitSentences(text);
     if (sentences.length === 0) return;
-    window.speechSynthesis.cancel();
-    speakGen += 1;
     const gen = speakGen;
     speakQueue = sentences;
     activeProsody = prosodyFor(moodOverride || currentMood);
@@ -648,11 +824,7 @@
   function speakNext(gen) {
     if (gen !== speakGen) return;
     if (speakQueue.length === 0) {
-      speakingNow = false;
-      orb.classList.remove("speaking");
-      orb.classList.remove("listening");
-      setOrbStatus(idleStatus());
-      setTimeout(maybeStartWake, 800);
+      finishSpeaking();
       return;
     }
     const sentence = speakQueue.shift();
@@ -929,6 +1101,30 @@
   }
 
   // ---------------------------------------------------------- chat
+  // Conversación plegable: colapsada por defecto. Colapsada solo se ve
+  // la última respuesta de Isis en una línea (vista previa); al tocar la
+  // cabecera se expande y se ve el chat completo. El dock y el campo para
+  // escribir quedan siempre visibles.
+  function setChatCollapsed(collapsed) {
+    if (!chatCard || !chatBody || !chatToggle) return;
+    chatCard.classList.toggle("collapsed", collapsed);
+    chatBody.hidden = collapsed;
+    chatToggle.setAttribute("aria-expanded", String(!collapsed));
+    if (chatPreview) {
+      chatPreview.hidden =
+        !collapsed || !chatPreview.textContent.trim();
+    }
+    if (!collapsed) chatBox.scrollTop = chatBox.scrollHeight;
+  }
+  function updateChatPreview(text) {
+    if (!chatPreview) return;
+    const t = String(text || "").trim();
+    if (!t) return;
+    chatPreview.textContent = t;
+    if (chatCard && chatCard.classList.contains("collapsed")) {
+      chatPreview.hidden = false;
+    }
+  }
   function addBubble(who, text, tag) {
     const div = document.createElement("div");
     div.className = "bubble " + who;
@@ -941,6 +1137,8 @@
     div.appendChild(document.createTextNode(text));
     chatBox.appendChild(div);
     chatBox.scrollTop = chatBox.scrollHeight;
+    // La vista previa del panel colapsado es siempre la última respuesta.
+    if (who === "isis") updateChatPreview(text);
     return div;
   }
 
@@ -1570,20 +1768,24 @@
     const d = $("cfg-textbee-device")
       ? $("cfg-textbee-device").value.trim()
       : "";
+    const el = $("cfg-google") ? $("cfg-google").value.trim() : "";
     if (f) localStorage.setItem(LS_FABLEAI, f);
     if (n) localStorage.setItem(LS_N8N, n);
     if (w) localStorage.setItem(LS_WHATSAPP, w);
     if (t) localStorage.setItem(LS_TEXTBEE, t);
     if (d) localStorage.setItem(LS_TEXTBEE_DEVICE, d);
+    if (el) localStorage.setItem(LS_GOOGLE, el);
     $("cfg-fableai").value = "";
     $("cfg-n8n").value = "";
     $("cfg-whatsapp").value = "";
     if ($("cfg-textbee")) $("cfg-textbee").value = "";
     if ($("cfg-textbee-device")) $("cfg-textbee-device").value = "";
+    if ($("cfg-google")) $("cfg-google").value = "";
     const msg = $("config-msg");
     msg.hidden = false;
     msg.textContent = "Claves guardadas en este navegador.";
     refreshKeyUI();
+    refreshGoogleVoices();
     loadOrlando();
   });
   $("btn-clear-config").addEventListener("click", () => {
@@ -1592,10 +1794,12 @@
     localStorage.removeItem(LS_WHATSAPP);
     localStorage.removeItem(LS_TEXTBEE);
     localStorage.removeItem(LS_TEXTBEE_DEVICE);
+    localStorage.removeItem(LS_GOOGLE);
     const msg = $("config-msg");
     msg.hidden = false;
     msg.textContent = "Claves borradas de este navegador.";
     refreshKeyUI();
+    refreshGoogleVoices();
     loadOrlando();
   });
 
@@ -1610,6 +1814,16 @@
         selectedVoice = chosen;
         localStorage.setItem(LS_VOICE, voiceId(chosen));
       }
+    });
+  }
+  // --- selector de voz de Google (Configuración): se llena desde
+  // /api/voices cuando hay clave. Al elegir, se guarda la voz.
+  const googleVoiceSelect = $("google-voice-select");
+  if (googleVoiceSelect) {
+    googleVoiceSelect.addEventListener("change", () => {
+      if (!googleVoiceSelect.value) return;
+      selectedGoogleVoice = googleVoiceSelect.value;
+      localStorage.setItem(LS_GOOGLE_VOICE, selectedGoogleVoice);
     });
   }
   const testVoiceBtn = $("btn-test-voice");
@@ -1634,7 +1848,15 @@
     window.speechSynthesis.addEventListener("voiceschanged", refreshVoices);
   }
   refreshVoices();
+  refreshGoogleVoices();
   updateWakeUI();
+  // Conversación plegable: empieza colapsada (solo la vista previa).
+  if (chatToggle) {
+    chatToggle.addEventListener("click", () => {
+      setChatCollapsed(!chatCard.classList.contains("collapsed"));
+    });
+  }
+  setChatCollapsed(true);
   // Dock estilo JARVIS: reutiliza los botones que ya existen.
   const dockOrlando = $("dock-orlando");
   if (dockOrlando) {
