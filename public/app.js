@@ -17,6 +17,16 @@
   const LS_CONTACTS = "isis_contacts";
   const LS_VOICE = "isis_voice";
   const LS_WAKE = "isis_wake_enabled";
+  // Spotify: Client ID y Client Secret (Configuración) y tokens (solo
+  // en este navegador; se mandan por petición, nunca se guardan en el
+  // servidor). Recordatorios y conteos de dinero: también locales.
+  const LS_SPOTIFY_ID = "isis_spotify_client_id";
+  const LS_SPOTIFY_SECRET = "isis_spotify_client_secret";
+  const LS_SPOTIFY_ACCESS = "isis_spotify_access";
+  const LS_SPOTIFY_REFRESH = "isis_spotify_refresh";
+  const LS_SPOTIFY_EXPIRES = "isis_spotify_expires_at";
+  const LS_REMINDERS = "isis_reminders";
+  const LS_MONEY = "isis_money_week";
   // Límites de la memoria: 60 hechos, 12 intercambios, resumen de ~800
   // caracteres, 250 caracteres por lado de cada intercambio.
   const MAX_FACTS = 60;
@@ -54,6 +64,10 @@
     ["panel-analyze", "Análisis"],
     ["panel-scan", "Escanear"],
     ["panel-systems", "Sistemas"],
+    ["panel-music", "Música"],
+    ["panel-reminders", "Recordatorios"],
+    ["panel-news", "Noticias"],
+    ["panel-money", "Dinero"],
   ];
 
   // ---------------------------------------------------------- claves
@@ -64,6 +78,8 @@
       whatsappToken: (localStorage.getItem(LS_WHATSAPP) || "").trim(),
       textbeeKey: (localStorage.getItem(LS_TEXTBEE) || "").trim(),
       textbeeDevice: (localStorage.getItem(LS_TEXTBEE_DEVICE) || "").trim(),
+      spotifyId: (localStorage.getItem(LS_SPOTIFY_ID) || "").trim(),
+      spotifySecret: (localStorage.getItem(LS_SPOTIFY_SECRET) || "").trim(),
     };
   }
 
@@ -74,12 +90,16 @@
       whatsappToken,
       textbeeKey,
       textbeeDevice,
+      spotifyId,
+      spotifySecret,
     } = getKeys();
     const fState = $("cfg-fableai-state");
     const nState = $("cfg-n8n-state");
     const wState = $("cfg-whatsapp-state");
     const tState = $("cfg-textbee-state");
     const dState = $("cfg-textbee-device-state");
+    const sIdState = $("cfg-spotify-id-state");
+    const sSecretState = $("cfg-spotify-secret-state");
     fState.textContent = fableaiKey ? "Guardada ✓" : "Sin guardar";
     fState.classList.toggle("ok", !!fableaiKey);
     nState.textContent = n8nKey ? "Guardada ✓" : "Sin guardar";
@@ -95,6 +115,14 @@
         ? "Guardado ✓"
         : "Sin guardar (opcional)";
       dState.classList.toggle("ok", !!textbeeDevice);
+    }
+    if (sIdState) {
+      sIdState.textContent = spotifyId ? "Guardado ✓" : "Sin guardar";
+      sIdState.classList.toggle("ok", !!spotifyId);
+    }
+    if (sSecretState) {
+      sSecretState.textContent = spotifySecret ? "Guardado ✓" : "Sin guardar";
+      sSecretState.classList.toggle("ok", !!spotifySecret);
     }
     keyBanner.hidden = !!fableaiKey;
   }
@@ -939,7 +967,11 @@
   // teléfono con lo que falte. Isis nunca se queda muda. Con Kokoro la
   // emoción la da la propia voz (no se toca pitch ni rate del audio).
   async function speak(text, moodOverride) {
-    const clean = String(text || "").trim();
+    // La voz nunca lee marcadores de markdown: **negritas** y demás se
+    // quitan antes de hablar, aquí, en el único punto por el que pasa
+    // TODO lo que Isis dice (chat, Mitote, análisis, decisiones,
+    // visión, sistemas, música, recordatorios, noticias, dinero).
+    const clean = stripMarkdown(String(text || "").trim());
     if (!clean) return;
     // Cortar lo que esté sonando (sea Kokoro o la voz del teléfono).
     stopKokoroAudio();
@@ -1271,7 +1303,8 @@
   }
   function updateChatPreview(text) {
     if (!chatPreview) return;
-    const t = String(text || "").trim();
+    // La vista previa es texto plano de una línea: sin marcadores.
+    const t = stripMarkdown(String(text || "").trim());
     if (!t) return;
     chatPreview.textContent = t;
     if (chatCard && chatCard.classList.contains("collapsed")) {
@@ -1287,7 +1320,13 @@
       t.textContent = tag;
       div.appendChild(t);
     }
-    div.appendChild(document.createTextNode(text));
+    // El texto se muestra con su formato: **negritas** y *cursivas* se
+    // ven como tales (markdownToHtml escapa el HTML primero, así que
+    // nada de lo que escriba Claude se ejecuta como código).
+    const content = document.createElement("span");
+    content.className = "bubble-text";
+    content.innerHTML = markdownToHtml(text);
+    div.appendChild(content);
     chatBox.appendChild(div);
     chatBox.scrollTop = chatBox.scrollHeight;
     // La vista previa del panel colapsado es siempre la última respuesta.
@@ -1304,6 +1343,15 @@
     addBubble("isis", msg, tag);
     speak(msg);
     recordExchange(msg);
+  }
+  // Anuncio sin historial: burbuja + voz. Para acciones que nacen de
+  // un botón (no de un mensaje de Santiago), el historial guardaría el
+  // intercambio con el mensaje anterior y quedaría mal. `record` en true
+  // lo guarda (comandos por voz); en false, no.
+  function announce(tag, msg, record) {
+    addBubble("isis", msg, tag);
+    speak(msg);
+    if (record) recordExchange(msg);
   }
   function recordExchange(isisText) {
     if (!lastUserText || !String(isisText || "").trim()) return;
@@ -1459,6 +1507,18 @@
     );
   }
 
+  // ¿Es la misma acción de El Mitote con los mismos datos? El flag
+  // `confirmed` no cuenta: la acción confirmada y la sin confirmar son
+  // la misma acción. Se usa para no re-ejecutar lo que ya se ejecutó.
+  function sameMitoteParams(a, b) {
+    const strip = (p) => {
+      const o = { ...(p || {}) };
+      delete o.confirmed;
+      return JSON.stringify(o);
+    };
+    return strip(a) === strip(b);
+  }
+
   async function handleSendSms(action) {
     const to = String(action.to || "").trim();
     const message = String(action.message || "").trim();
@@ -1579,14 +1639,67 @@
       mitote_action: action.mitote_action,
       params: action.params || {},
       summary: action.summary || "",
+      actionLabel: action.actionLabel || "",
       originalText: originalText || null,
       fableaiKey: fableaiKey || null,
     };
-    const ask = `Voy a ${action.summary || action.mitote_action}. ¿Confirmas?`;
-    addBubble("isis", ask, "El Mitote · confirmar");
+    // La pregunta: con el resumen de Claude ("Voy a cerrar el turno…")
+    // o, si la confirmación la exige el servidor (403), con la etiqueta
+    // de la acción ("creación de producto").
+    const ask = action.summary
+      ? `Voy a ${action.summary}. ¿Confirmas?`
+      : action.actionLabel
+        ? `Esta acción (${action.actionLabel}) necesita tu confirmación. ¿Confirmas?`
+        : "Esta acción necesita tu confirmación. ¿Confirmas?";
+    const bubble = addBubble("isis", ask, "El Mitote · confirmar");
+    // Confirmar por botón, además de por voz: los dos caminos resuelven
+    // la MISMA pendiente (resolveMitoteConfirm), así que no hay forma
+    // de que la confirmación se pierda por el camino elegido.
+    const row = document.createElement("div");
+    row.className = "confirm-row";
+    const yesBtn = document.createElement("button");
+    yesBtn.className = "small-btn";
+    yesBtn.textContent = "✓ Sí, hazlo";
+    yesBtn.addEventListener("click", () => resolveMitoteConfirm(true));
+    const noBtn = document.createElement("button");
+    noBtn.className = "small-btn danger";
+    noBtn.textContent = "✕ No, mejor no";
+    noBtn.addEventListener("click", () => resolveMitoteConfirm(false));
+    row.appendChild(yesBtn);
+    row.appendChild(noBtn);
+    bubble.appendChild(row);
     speak(ask);
     recordExchange(ask);
     setOrbStatus("Te espero: ¿confirmas?");
+  }
+
+  // Resuelve la confirmación pendiente de El Mitote, venga por voz
+  // ("sí"/"no") o por botón. La pendiente se consume UNA sola vez: el
+  // segundo intento (doble toque, doble "sí") ya no encuentra nada que
+  // resolver y no vuelve a ejecutar. Con "sí", la acción se manda con
+  // confirmed: true y se ejecuta; con "no", se descarta.
+  async function resolveMitoteConfirm(affirmative) {
+    const pending = pendingMitote;
+    pendingMitote = null;
+    if (!pending) return;
+    if (affirmative) {
+      setThinking(true);
+      const params = { ...(pending.params || {}), confirmed: true };
+      await runMitoteChain(
+        pending.fableaiKey,
+        pending.originalText || "",
+        pending.mitote_action,
+        params,
+        0
+      );
+      setThinking(false);
+      if (!pendingMitote) setOrbStatus(idleStatus());
+      setTimeout(maybeStartWake, 1200);
+      return;
+    }
+    sayFinal("El Mitote", "Listo, no lo hago.");
+    setOrbStatus(idleStatus());
+    setTimeout(maybeStartWake, 1200);
   }
 
   async function callMitoteProxy(mitoteAction, params) {
@@ -1619,6 +1732,26 @@
     }
     const d = result.data || {};
     if (!result.ok) {
+      // El servidor exige confirmación (403 con needsConfirmation):
+      // ANTES aquí solo se mostraba el error y la pendiente nunca se
+      // armaba, así que el "sí" de Santiago volvía al chat, Claude
+      // mandaba la acción directa otra vez y el error se repetía en
+      // bucle. AHORA se arma la confirmación pendiente con la acción y
+      // sus datos, y el próximo "sí" (por voz o por botón) la ejecuta
+      // con confirmed: true.
+      if (d.needsConfirmation || /necesita confirmación/.test(d.error || "")) {
+        storeMitoteConfirm(
+          {
+            mitote_action: firstAction,
+            params: firstParams,
+            summary: "",
+            actionLabel: d.actionLabel || "",
+          },
+          fableaiKey,
+          originalText
+        );
+        return;
+      }
       sayFinal("El Mitote", d.error || "El Mitote no aceptó esa acción.");
       setOrbStatus(idleStatus());
       return;
@@ -1680,6 +1813,28 @@
       if (mood) setMood(mood);
       const nextFound = parseMitoteAction(cleanReply);
       if (nextFound) {
+        const next = nextFound.action;
+        // Guardia contra el bucle: si Claude pide OTRA VEZ la misma
+        // acción con los mismos datos que se acaban de ejecutar, no se
+        // re-ejecuta ni se vuelve a pedir confirmación: la cadena se
+        // cierra con el resumen. Los pasos legítimos (cobrar: leer
+        // cuenta → pedir cuenta → cobrar → cerrar) siempre usan
+        // acciones DISTINTAS, así que repetir la misma es un error de
+        // Claude, no un paso nuevo.
+        if (
+          next.mitote_action === firstAction &&
+          sameMitoteParams(next.params, firstParams)
+        ) {
+          const rest = stripActionJson(cleanReply, nextFound);
+          const finalText = hasMeaningfulText(rest)
+            ? rest
+            : note + summary;
+          addBubble("isis", finalText, "Isis");
+          speak(finalText);
+          recordExchange(finalText);
+          setOrbStatus(idleStatus());
+          return;
+        }
         // Claude escribió texto antes del JSON: se muestra el texto sin el
         // JSON y luego se ejecuta la acción.
         const rest = stripActionJson(cleanReply, nextFound);
@@ -1687,7 +1842,6 @@
           addBubble("isis", rest, "Isis");
           speak(rest);
         }
-        const next = nextFound.action;
         if (next.action === "mitote_confirm") {
           storeMitoteConfirm(next, fableaiKey, originalText);
         } else {
@@ -1711,25 +1865,18 @@
     chatInput.value = "";
 
     // Confirmación pendiente de El Mitote: solo un "sí" explícito ejecuta.
+    // Por voz o por botón es lo mismo: resolveMitoteConfirm. Cualquier
+    // otra cosa la descarta y el mensaje sigue normal.
     if (pendingMitote) {
-      const pending = pendingMitote;
-      pendingMitote = null;
       if (isAffirmative(text)) {
-        setThinking(true);
-        const params = { ...(pending.params || {}), confirmed: true };
-        await runMitoteChain(pending.fableaiKey, pending.originalText || text, pending.mitote_action, params, 0);
-        setThinking(false);
-        if (!pendingMitote) setOrbStatus(idleStatus());
-        setTimeout(maybeStartWake, 1200);
+        await resolveMitoteConfirm(true);
         return;
       }
       if (isNegative(text)) {
-        sayFinal("El Mitote", "Listo, no lo hago.");
-        setOrbStatus(idleStatus());
-        setTimeout(maybeStartWake, 1200);
+        await resolveMitoteConfirm(false);
         return;
       }
-      // Otra cosa: se descarta la confirmación y el mensaje sigue normal.
+      pendingMitote = null;
       addBubble("isis", "De acuerdo, dejamos eso sin hacer.", "El Mitote");
     }
 
@@ -1762,6 +1909,37 @@
       } else {
         await runDecide(decisionText, true);
       }
+      setTimeout(maybeStartWake, 1200);
+      return;
+    }
+    // Funciones JARVIS, segunda tanda: recordatorios y temporizadores
+    // (antes que música: "pon un temporizador" también empieza con "pon"),
+    // música, noticias y dinero. Se detectan aquí y no pasan por el chat.
+    const reminderCmd = extractReminder(text);
+    if (reminderCmd) {
+      await runReminderCommand(reminderCmd);
+      setTimeout(maybeStartWake, 1200);
+      return;
+    }
+    const musicCmd = extractMusic(text);
+    if (musicCmd) {
+      await runMusicCommand(musicCmd, true);
+      setTimeout(maybeStartWake, 1200);
+      return;
+    }
+    if (isNewsRequest(text)) {
+      await runNews(true);
+      setTimeout(maybeStartWake, 1200);
+      return;
+    }
+    const moneyCounts = extractMoneyCounts(text);
+    if (Object.keys(moneyCounts).length) {
+      runMoneySet(moneyCounts);
+      setTimeout(maybeStartWake, 1200);
+      return;
+    }
+    if (isMoneyQuestion(text)) {
+      await runMoneyQuestion(true);
       setTimeout(maybeStartWake, 1200);
       return;
     }
@@ -1849,7 +2027,10 @@
     }
     setThinking(false);
     orb.classList.remove("listening");
-    setOrbStatus(idleStatus());
+    // Si quedó una confirmación de El Mitote pendiente, el orbe sigue
+    // diciendo "Te espero: ¿confirmas?" (lo puso storeMitoteConfirm);
+    // si no, vuelve al estado normal.
+    if (!pendingMitote) setOrbStatus(idleStatus());
     setTimeout(maybeStartWake, 1200);
   }
 
@@ -1879,8 +2060,8 @@
       <div class="row"><span class="label">Fallidas</span><span class="value">${d.executionsFailed}</span></div>
       <div class="row"><span class="label">La prueba vence</span><span class="value">3 dic 2026</span></div>
       <div class="row"><span class="label">Revisado</span><span class="value">${checked}</span></div>
-      ${d.message ? `<p class="muted">${escapeHtml(d.message)}</p>` : ""}
-      ${d.error ? `<p class="muted">${escapeHtml(d.error)}</p>` : ""}
+      ${d.message ? `<p class="muted">${markdownToHtml(d.message)}</p>` : ""}
+      ${d.error ? `<p class="muted">${markdownToHtml(d.error)}</p>` : ""}
     `;
   }
   function escapeHtml(s) {
@@ -1888,6 +2069,46 @@
       .replace(/&/g, "&amp;")
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;");
+  }
+  // ---------------------------------------------------------- markdown
+  // Claude responde con markdown (**negritas**, *cursivas*, `código`,
+  // ## títulos). En pantalla eso debe VERSE como negritas/cursivas, no
+  // como asteriscos crudos; y en voz no debe leerse ningún marcador.
+  // markdownToHtml: escapa el HTML y convierte el markdown a HTML
+  // seguro (para burbujas y paneles, con innerHTML). stripMarkdown:
+  // quita TODOS los marcadores y deja texto plano (para la voz y la
+  // vista previa de la conversación). Ninguna de las dos inventa nada:
+  // solo formatea lo que Claude ya escribió.
+  function markdownToHtml(text) {
+    let html = escapeHtml(String(text || ""));
+    // Bloques de código y código en línea: se queda el contenido.
+    html = html.replace(/```[\s\S]*?```/g, (m) => m.replace(/```/g, ""));
+    html = html.replace(/`([^`\n]+)`/g, "$1");
+    // Títulos: "## Título" -> "Título" (al inicio de cada línea).
+    html = html.replace(/^#{1,6}\s+/gm, "");
+    // Negritas **x** y __x__.
+    html = html.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+    html = html.replace(/__([^_]+)__/g, "<strong>$1</strong>");
+    // Cursivas *x*: solo cuando el * abre tras inicio/espacio y cierra
+    // antes de espacio o puntuación (para no tocar "5 * 3" ni "2x1").
+    html = html.replace(
+      /(^|[\s(>])\*([^*\n]+?)\*(?=$|[\s).,!?;:])/g,
+      "$1<em>$2</em>"
+    );
+    return html;
+  }
+  function stripMarkdown(text) {
+    let t = String(text || "");
+    t = t.replace(/```[\s\S]*?```/g, (m) => m.replace(/```/g, ""));
+    t = t.replace(/`([^`\n]+)`/g, "$1");
+    t = t.replace(/^#{1,6}\s+/gm, "");
+    t = t.replace(/\*\*([^*]+)\*\*/g, "$1");
+    t = t.replace(/__([^_]+)__/g, "$1");
+    t = t.replace(/(^|[\s(>])\*([^*\n]+?)\*(?=$|[\s).,!?;:])/g, "$1$2");
+    // Cualquier asterisco que quede (viñetas "* item", asteriscos
+    // sueltos): fuera, para que la voz nunca diga "asterisco".
+    t = t.replace(/\*/g, "");
+    return t;
   }
   async function loadOrlando() {
     orlandoPanel.innerHTML = "<p class='muted'>Revisando a Orlando…</p>";
@@ -1914,7 +2135,7 @@
         summary: loadSummary(),
       });
       if (!ok && data.error) {
-        analysisBox.innerHTML = `<p>${escapeHtml(data.error)}</p>`;
+        analysisBox.innerHTML = `<p>${markdownToHtml(data.error)}</p>`;
         return;
       }
       // Por si Claude devuelve marcadores en el análisis, se quitan de
@@ -1922,7 +2143,7 @@
       const mem = extractMemory(data.analysis || "");
       const { text: cleanAnalysis, mood } = extractMood(mem.text);
       if (mood) setMood(mood);
-      analysisBox.textContent = cleanAnalysis || "Sin análisis.";
+      analysisBox.innerHTML = markdownToHtml(cleanAnalysis || "Sin análisis.");
     } catch (e) {
       analysisBox.innerHTML =
         "<p>No pude hacer el análisis ahora mismo.</p>";
@@ -2034,7 +2255,7 @@
       if (!ok || !data.analysis) {
         const msg =
           (data && data.error) || "No pude analizar la foto ahora mismo.";
-        if (scanResult) scanResult.innerHTML = `<p>${escapeHtml(msg)}</p>`;
+        if (scanResult) scanResult.innerHTML = `<p>${markdownToHtml(msg)}</p>`;
         sayFinal("Escaneo", msg);
         setOrbStatus(idleStatus());
         return;
@@ -2042,14 +2263,14 @@
       const { text: cleanAnalysis, mood } = processClaudeReply(data.analysis);
       if (mood) setMood(mood);
       if (scanResult)
-        scanResult.textContent = cleanAnalysis || "Sin análisis.";
+        scanResult.innerHTML = markdownToHtml(cleanAnalysis || "Sin análisis.");
       addBubble("isis", cleanAnalysis, "Escaneo");
       speak(cleanAnalysis);
       recordExchange(cleanAnalysis);
     } catch (e) {
       setThinking(false);
       const msg = "No pude analizar la foto ahora mismo.";
-      if (scanResult) scanResult.innerHTML = `<p>${escapeHtml(msg)}</p>`;
+      if (scanResult) scanResult.innerHTML = `<p>${markdownToHtml(msg)}</p>`;
       sayFinal("Escaneo", msg);
     }
     setOrbStatus(idleStatus());
@@ -2069,7 +2290,7 @@
         await analyzePhoto(small);
       } catch (e) {
         const msg = "No pude leer esa foto. Tómala de nuevo.";
-        if (scanResult) scanResult.innerHTML = `<p>${escapeHtml(msg)}</p>`;
+        if (scanResult) scanResult.innerHTML = `<p>${markdownToHtml(msg)}</p>`;
         sayFinal("Escaneo", msg);
       }
     });
@@ -2116,7 +2337,7 @@
               : c.status === "down"
                 ? "✕"
                 : "○";
-        return `<div class="sys-row ${cls}"><span class="sys-dot" aria-hidden="true">${dot}</span><span class="sys-label">${escapeHtml(label)}</span><span class="sys-detail">${escapeHtml(c.detail || "")}</span></div>`;
+        return `<div class="sys-row ${cls}"><span class="sys-dot" aria-hidden="true">${dot}</span><span class="sys-label">${markdownToHtml(label)}</span><span class="sys-detail">${markdownToHtml(c.detail || "")}</span></div>`;
       })
       .join("");
     const alerts = Array.isArray(report.alerts) ? report.alerts : [];
@@ -2124,12 +2345,12 @@
       ? `<div class="sys-alerts">${alerts
           .map(
             (a) =>
-              `<p class="sys-alert"><strong>⚠ ${escapeHtml(a.message)}</strong><br><span class="muted">${escapeHtml(a.action || "")}</span></p>`
+              `<p class="sys-alert"><strong>⚠ ${markdownToHtml(a.message)}</strong><br><span class="muted">${markdownToHtml(a.action || "")}</span></p>`
           )
           .join("")}</div>`
       : "";
     systemsResult.innerHTML = `
-      <p class="sys-verdict">${escapeHtml(report.verdict || "")}</p>
+      <p class="sys-verdict">${markdownToHtml(report.verdict || "")}</p>
       ${rows}
       ${alertsHtml}
       <p class="muted small">Revisado ${report.checkedAt ? new Date(report.checkedAt).toLocaleString("es-MX") : "ahora mismo"}.</p>`;
@@ -2161,7 +2382,7 @@
         const msg =
           (data && data.error) || "No pude revisar los sistemas ahora mismo.";
         if (!auto && systemsResult)
-          systemsResult.innerHTML = `<p>${escapeHtml(msg)}</p>`;
+          systemsResult.innerHTML = `<p>${markdownToHtml(msg)}</p>`;
         if (speakIt) sayFinal("Sistemas", msg);
         if (!auto) setOrbStatus(idleStatus());
         return null;
@@ -2189,7 +2410,7 @@
     } catch (e) {
       const msg = "No pude revisar los sistemas ahora mismo.";
       if (!auto && systemsResult)
-        systemsResult.innerHTML = `<p>${escapeHtml(msg)}</p>`;
+        systemsResult.innerHTML = `<p>${markdownToHtml(msg)}</p>`;
       if (speakIt) sayFinal("Sistemas", msg);
       if (!auto) setOrbStatus(idleStatus());
       return null;
@@ -2257,7 +2478,7 @@
           (data && data.error) ||
           "No pude analizar la decisión ahora mismo.";
         if (decisionResult)
-          decisionResult.innerHTML = `<p>${escapeHtml(msg)}</p>`;
+          decisionResult.innerHTML = `<p>${markdownToHtml(msg)}</p>`;
         sayFinal("Análisis", msg);
         setOrbStatus(idleStatus());
         return null;
@@ -2269,10 +2490,10 @@
       const rec = String(data.recommendation || "").trim();
       if (decisionResult) {
         decisionResult.innerHTML = `
-          <p class="dec-verdict">${escapeHtml(verdict || "Sin veredicto.")}</p>
-          ${pros.length ? `<p class="dec-head">A favor</p><ul class="dec-list pros">${pros.map((p) => `<li>${escapeHtml(p)}</li>`).join("")}</ul>` : ""}
-          ${cons.length ? `<p class="dec-head">En contra</p><ul class="dec-list cons">${cons.map((c) => `<li>${escapeHtml(c)}</li>`).join("")}</ul>` : ""}
-          ${rec ? `<p class="dec-rec"><strong>Recomendación:</strong> ${escapeHtml(rec)}</p>` : ""}`;
+          <p class="dec-verdict">${markdownToHtml(verdict || "Sin veredicto.")}</p>
+          ${pros.length ? `<p class="dec-head">A favor</p><ul class="dec-list pros">${pros.map((p) => `<li>${markdownToHtml(p)}</li>`).join("")}</ul>` : ""}
+          ${cons.length ? `<p class="dec-head">En contra</p><ul class="dec-list cons">${cons.map((c) => `<li>${markdownToHtml(c)}</li>`).join("")}</ul>` : ""}
+          ${rec ? `<p class="dec-rec"><strong>Recomendación:</strong> ${markdownToHtml(rec)}</p>` : ""}`;
       }
       // Se habla solo lo corto: el veredicto y la recomendación.
       const spoken = rec
@@ -2287,7 +2508,7 @@
       setThinking(false);
       const msg = "No pude analizar la decisión ahora mismo.";
       if (decisionResult)
-        decisionResult.innerHTML = `<p>${escapeHtml(msg)}</p>`;
+        decisionResult.innerHTML = `<p>${markdownToHtml(msg)}</p>`;
       sayFinal("Análisis", msg);
       setOrbStatus(idleStatus());
       return null;
@@ -2305,6 +2526,1100 @@
       }
       runDecide(d, false);
     });
+  }
+
+  // ---------------------------------------------------------- funciones JARVIS (2ª tanda)
+  // Música (Spotify), recordatorios y temporizadores, noticias y
+  // dinero. Todo vive en el menú hamburguesa; la pantalla principal
+  // sigue minimalista.
+
+  // --- música (Spotify) ---
+  // Los tokens y el Client Secret viven SOLO en localStorage y se
+  // mandan por petición al servidor, que solo hace de puente a Spotify.
+  // La reproducción exige Premium (lo impone Spotify): sin Premium la
+  // API responde 403 y el servidor lo traduce a un mensaje claro.
+  function spotifyRedirectUri() {
+    try {
+      const origin =
+        window.location && window.location.origin
+          ? window.location.origin
+          : "";
+      return origin + "/";
+    } catch (e) {
+      return "";
+    }
+  }
+  function getSpotifyCreds() {
+    return {
+      clientId: (localStorage.getItem(LS_SPOTIFY_ID) || "").trim(),
+      clientSecret: (localStorage.getItem(LS_SPOTIFY_SECRET) || "").trim(),
+      access: (localStorage.getItem(LS_SPOTIFY_ACCESS) || "").trim(),
+      refresh: (localStorage.getItem(LS_SPOTIFY_REFRESH) || "").trim(),
+      expiresAt: Number(localStorage.getItem(LS_SPOTIFY_EXPIRES) || "0") || 0,
+    };
+  }
+  function spotifyConnected() {
+    return !!getSpotifyCreds().refresh;
+  }
+  function saveSpotifyTokens(access, refresh, expiresIn) {
+    if (access) localStorage.setItem(LS_SPOTIFY_ACCESS, access);
+    if (refresh) localStorage.setItem(LS_SPOTIFY_REFRESH, refresh);
+    if (expiresIn) {
+      localStorage.setItem(
+        LS_SPOTIFY_EXPIRES,
+        String(Date.now() + Number(expiresIn) * 1000 - 60000)
+      );
+    }
+  }
+  function clearSpotifyTokens() {
+    localStorage.removeItem(LS_SPOTIFY_ACCESS);
+    localStorage.removeItem(LS_SPOTIFY_REFRESH);
+    localStorage.removeItem(LS_SPOTIFY_EXPIRES);
+  }
+  async function spotifyRefreshAccess() {
+    const { clientId, clientSecret, refresh } = getSpotifyCreds();
+    if (!clientId || !clientSecret || !refresh) return null;
+    try {
+      const { ok, data } = await postJSON("/api/spotify/refresh", {
+        refreshToken: refresh,
+        clientId,
+        clientSecret,
+      });
+      if (!ok || !data.access_token) return null;
+      saveSpotifyTokens(data.access_token, data.refresh_token || null, data.expires_in);
+      return data.access_token;
+    } catch (e) {
+      return null;
+    }
+  }
+  async function spotifyAccessToken() {
+    const creds = getSpotifyCreds();
+    if (!creds.refresh) return null;
+    if (creds.access && creds.expiresAt > Date.now()) return creds.access;
+    return spotifyRefreshAccess();
+  }
+  // Llama a un endpoint de Spotify del servidor; si el token expiró
+  // (401), lo renueva una vez y reintenta.
+  async function callSpotify(endpoint, body) {
+    let token = await spotifyAccessToken();
+    if (!token) {
+      return {
+        ok: false,
+        status: 401,
+        data: { error: "Spotify no está conectado.", needsConnect: true },
+      };
+    }
+    let res = await postJSON(endpoint, { ...(body || {}), accessToken: token });
+    if (res.status === 401 && res.data && res.data.needsRefresh) {
+      const fresh = await spotifyRefreshAccess();
+      if (!fresh) return res;
+      res = await postJSON(endpoint, { ...(body || {}), accessToken: fresh });
+    }
+    return res;
+  }
+  const musicStatus = $("music-status");
+  const musicSearchInput = $("music-search-input");
+  const musicResults = $("music-results");
+  const musicNow = $("music-now");
+  function renderMusicStatus() {
+    const creds = getSpotifyCreds();
+    if (musicStatus) {
+      musicStatus.textContent = creds.refresh
+        ? "Spotify conectado ✓ · la reproducción se controla desde aquí."
+        : "Spotify sin conectar. Crea la app en developer.spotify.com y pega el Client ID y el Client Secret en Configuración.";
+    }
+    const connectBtn = $("btn-spotify-connect");
+    if (connectBtn) {
+      connectBtn.textContent = creds.refresh
+        ? "Reconectar Spotify"
+        : "Conectar Spotify";
+    }
+    const disconnectBtn = $("btn-spotify-disconnect");
+    if (disconnectBtn) disconnectBtn.hidden = !creds.refresh;
+    const redirectEl = $("spotify-redirect-uri");
+    if (redirectEl) redirectEl.textContent = spotifyRedirectUri() || "la dirección de Isis";
+  }
+  function sayMusicNotConnected() {
+    const msg =
+      "Para poner música primero conecta Spotify en el menú ☰ → Música.";
+    announce("Música", msg, true);
+    openPanel("panel-music");
+  }
+  async function connectSpotify() {
+    const { clientId } = getSpotifyCreds();
+    const { clientSecret } = getSpotifyCreds();
+    if (!clientId || !clientSecret) {
+      const msg =
+        "Primero pega el Client ID y el Client Secret de Spotify en Configuración (menú ☰ → Configuración).";
+      if (musicStatus) musicStatus.textContent = msg;
+      announce("Música", msg, false);
+      openPanel("panel-config");
+      return;
+    }
+    try {
+      const { ok, data } = await postJSON("/api/spotify/auth-url", {
+        clientId,
+        redirectUri: spotifyRedirectUri(),
+      });
+      if (!ok || !data.url) {
+        const msg =
+          (data && data.error) || "No pude preparar la conexión con Spotify.";
+        if (musicStatus) musicStatus.textContent = msg;
+        announce("Música", msg, false);
+        return;
+      }
+      try {
+        window.location.href = data.url;
+      } catch (e) {
+        if (musicStatus) {
+          musicStatus.textContent =
+            "Abre esta URL para conectar Spotify: " + data.url;
+        }
+      }
+    } catch (e) {
+      const msg = "No pude hablar con el servidor ahora mismo.";
+      if (musicStatus) musicStatus.textContent = msg;
+      announce("Música", msg, false);
+    }
+  }
+  // Spotify regresa a la app con ?code= (o ?error= si se canceló): se
+  // intercambia el código por tokens y se limpia la URL para no
+  // reintentarlo al recargar. Corre una sola vez al abrir la app.
+  async function handleSpotifyCallback() {
+    let search = "";
+    try {
+      search = (window.location && window.location.search) || "";
+    } catch (e) {
+      return;
+    }
+    if (!search) return;
+    let params = null;
+    try {
+      params = new URLSearchParams(search);
+    } catch (e) {
+      return;
+    }
+    const code = params.get("code");
+    const err = params.get("error");
+    try {
+      if (window.history && window.history.replaceState) {
+        window.history.replaceState(
+          {},
+          "",
+          (window.location && window.location.pathname) || "/"
+        );
+      }
+    } catch (e) {}
+    if (err) {
+      addBubble("isis", "No se conectó Spotify: se canceló la autorización.", "Música");
+      return;
+    }
+    if (!code) return;
+    const { clientId, clientSecret } = getSpotifyCreds();
+    if (!clientId || !clientSecret) {
+      addBubble(
+        "isis",
+        "Spotify me devolvió el código, pero falta el Client ID o el Client Secret en Configuración. Pégalos y conéctalo de nuevo.",
+        "Música"
+      );
+      return;
+    }
+    try {
+      const { ok, data } = await postJSON("/api/spotify/token", {
+        code,
+        clientId,
+        clientSecret,
+        redirectUri: spotifyRedirectUri(),
+      });
+      if (ok && data.access_token) {
+        saveSpotifyTokens(data.access_token, data.refresh_token, data.expires_in);
+        renderMusicStatus();
+        addBubble("isis", "Listo, Spotify conectado. Ya puedo ponerte música.", "Música");
+        speak("Listo, Spotify conectado. Ya puedo ponerte música.");
+      } else {
+        addBubble(
+          "isis",
+          (data && data.error) || "No se pudo conectar Spotify.",
+          "Música"
+        );
+      }
+    } catch (e) {
+      addBubble("isis", "No pude conectar Spotify ahora mismo.", "Música");
+    }
+  }
+  async function refreshSpotifyNow() {
+    if (!spotifyConnected()) return null;
+    try {
+      const { ok, data } = await callSpotify("/api/spotify/status", {});
+      if (!ok || !data) return null;
+      const label =
+        data.playing && data.track
+          ? `Sonando: ${data.track.name} — ${(data.track.artists || []).join(", ")}`
+          : "Nada sonando en Spotify.";
+      if (musicNow) musicNow.textContent = label;
+      return data.playing && data.track
+        ? `Está sonando ${data.track.name} de ${(data.track.artists || []).join(", ")}.`
+        : null;
+    } catch (e) {
+      return null;
+    }
+  }
+  function renderMusicResults(tracks) {
+    if (!musicResults) return;
+    musicResults.innerHTML = "";
+    tracks.forEach((t) => {
+      const li = document.createElement("li");
+      const btn = document.createElement("button");
+      btn.className = "music-result-btn";
+      btn.textContent = `${t.name} — ${(t.artists || []).join(", ")}`;
+      btn.addEventListener("click", () =>
+        runSpotifyPlay(
+          t.uri,
+          `${t.name} de ${(t.artists || []).join(", ")}`,
+          false
+        )
+      );
+      li.appendChild(btn);
+      musicResults.appendChild(li);
+    });
+  }
+  async function runSpotifySearch(query) {
+    const q = String(query || "").trim();
+    if (!q) {
+      if (musicResults) {
+        musicResults.innerHTML =
+          "<li><span class='muted'>Escribe una canción o un artista.</span></li>";
+      }
+      return;
+    }
+    if (!spotifyConnected()) {
+      sayMusicNotConnected();
+      return;
+    }
+    if (musicResults) {
+      musicResults.innerHTML = '<li><span class="loading">BUSCANDO…</span></li>';
+    }
+    try {
+      const { ok, data } = await callSpotify("/api/spotify/search", { q });
+      if (!ok || !Array.isArray(data.tracks)) {
+        const msg =
+          (data && data.error) || "No pude buscar en Spotify ahora mismo.";
+        if (musicResults) {
+          musicResults.innerHTML = `<li><span>${markdownToHtml(msg)}</span></li>`;
+        }
+        announce("Música", msg, false);
+        return;
+      }
+      if (data.tracks.length === 0) {
+        if (musicResults) {
+          musicResults.innerHTML =
+            "<li><span class='muted'>No encontré nada con ese nombre.</span></li>";
+        }
+        return;
+      }
+      renderMusicResults(data.tracks);
+    } catch (e) {
+      if (musicResults) {
+        musicResults.innerHTML =
+          "<li><span>No pude buscar en Spotify ahora mismo.</span></li>";
+      }
+    }
+  }
+  async function runSpotifyPlay(uri, label, fromVoice) {
+    if (!spotifyConnected()) {
+      sayMusicNotConnected();
+      return false;
+    }
+    setOrbStatus("Isis está poniendo música…");
+    try {
+      const { ok, data } = await callSpotify(
+        "/api/spotify/play",
+        uri ? { uri } : {}
+      );
+      if (!ok) {
+        const msg =
+          (data && data.error) || "No pude poner la música ahora mismo.";
+        announce("Música", msg, fromVoice);
+        setOrbStatus(idleStatus());
+        return false;
+      }
+      const spoken = label ? `Poniendo ${label}.` : "Poniendo música.";
+      announce("Música", spoken, fromVoice);
+      await refreshSpotifyNow();
+      setOrbStatus(idleStatus());
+      return true;
+    } catch (e) {
+      announce("Música", "No pude poner la música ahora mismo.", fromVoice);
+      setOrbStatus(idleStatus());
+      return false;
+    }
+  }
+  async function runMusicCommand(cmd, fromVoice) {
+    if (!spotifyConnected()) {
+      sayMusicNotConnected();
+      return;
+    }
+    if (cmd.kind === "pause") {
+      const { ok, data } = await callSpotify("/api/spotify/pause", {});
+      if (!ok) {
+        announce("Música", (data && data.error) || "No pude pausar la música.", fromVoice);
+        return;
+      }
+      announce("Música", "Pausé la música.", fromVoice);
+      await refreshSpotifyNow();
+      return;
+    }
+    if (cmd.kind === "next") {
+      const { ok, data } = await callSpotify("/api/spotify/next", {});
+      if (!ok) {
+        announce("Música", (data && data.error) || "No pude cambiar de canción.", fromVoice);
+        return;
+      }
+      await refreshSpotifyNow();
+      announce("Música", "Siguiente canción.", fromVoice);
+      return;
+    }
+    if (cmd.kind === "status") {
+      const now = await refreshSpotifyNow();
+      announce("Música", now || "No está sonando nada en Spotify.", fromVoice);
+      return;
+    }
+    // play
+    if (cmd.query) {
+      const { ok, data } = await callSpotify("/api/spotify/search", {
+        q: cmd.query,
+      });
+      if (!ok || !Array.isArray(data.tracks) || !data.tracks.length) {
+        announce(
+          "Música",
+          (data && data.error) || `No encontré "${cmd.query}" en Spotify.`,
+          fromVoice
+        );
+        return;
+      }
+      const t = data.tracks[0];
+      await runSpotifyPlay(
+        t.uri,
+        `${t.name} de ${(t.artists || []).join(", ")}`,
+        fromVoice
+      );
+      return;
+    }
+    await runSpotifyPlay(null, null, fromVoice);
+  }
+  // Saca el comando de música del mensaje: null si no es música.
+  // "pon [canción/artista]" solo si no es temporizador, recordatorio ni
+  // algo de El Mitote (eso se atiende en otro lado o por el chat).
+  function extractMusic(text) {
+    const t = String(text || "")
+      .trim()
+      .replace(/^isis[,\s:–—-]*/i, "");
+    if (/pausa( la)? (la )?m[uú]sica|\bpausar\b/i.test(t)) return { kind: "pause" };
+    if (/siguiente (canci[oó]n|tema)/i.test(t)) return { kind: "next" };
+    if (/qu[eé] (est[aá] sonando|suena)/i.test(t)) return { kind: "status" };
+    if (/pon (?:m[uú]sica|una canci[oó]n|algo de m[uú]sica)\b/i.test(t)) return { kind: "play" };
+    if (/ponme (?:m[uú]sica|una canci[oó]n)\b/i.test(t)) return { kind: "play" };
+    let m = t.match(/reproduce (.+)/i);
+    if (m) return { kind: "play", query: m[1].trim() };
+    m = t.match(/pon (.+)/i);
+    if (m) {
+      const q = m[1].trim();
+      if (
+        /temporizador|recordatorio|recu[eé]rdame|la mesa|la cuenta|el turno|el restaurante/i.test(
+          q
+        )
+      )
+        return null;
+      return { kind: "play", query: q };
+    }
+    return null;
+  }
+  const btnSpotifyConnect = $("btn-spotify-connect");
+  if (btnSpotifyConnect) {
+    btnSpotifyConnect.addEventListener("click", connectSpotify);
+  }
+  const btnSpotifyDisconnect = $("btn-spotify-disconnect");
+  if (btnSpotifyDisconnect) {
+    btnSpotifyDisconnect.addEventListener("click", () => {
+      clearSpotifyTokens();
+      renderMusicStatus();
+      if (musicNow) musicNow.textContent = "";
+      if (musicResults) musicResults.innerHTML = "";
+      announce("Música", "Spotify desconectado.", false);
+    });
+  }
+  const btnMusicSearch = $("btn-music-search");
+  if (btnMusicSearch) {
+    btnMusicSearch.addEventListener("click", () =>
+      runSpotifySearch(musicSearchInput ? musicSearchInput.value : "")
+    );
+  }
+  const btnMusicPlay = $("btn-music-play");
+  if (btnMusicPlay) {
+    btnMusicPlay.addEventListener("click", () =>
+      runSpotifyPlay(null, null, false)
+    );
+  }
+  const btnMusicPause = $("btn-music-pause");
+  if (btnMusicPause) {
+    btnMusicPause.addEventListener("click", () =>
+      runMusicCommand({ kind: "pause" }, false)
+    );
+  }
+  const btnMusicNext = $("btn-music-next");
+  if (btnMusicNext) {
+    btnMusicNext.addEventListener("click", () =>
+      runMusicCommand({ kind: "next" }, false)
+    );
+  }
+  const btnMusicNow = $("btn-music-now");
+  if (btnMusicNow) {
+    btnMusicNow.addEventListener("click", () => refreshSpotifyNow());
+  }
+
+  // --- recordatorios y temporizadores ---
+  // Solo en este navegador (localStorage) y solo con la app abierta:
+  // en Render Free Isis se duerme y no hay servicio en segundo plano,
+  // así que un recordatorio que vence con la app cerrada suena cuando
+  // la vuelves a abrir ("Te debía recordar…").
+  const reminderTimers = new Map(); // id -> timeout (solo en memoria)
+  function loadReminders() {
+    try {
+      const raw = localStorage.getItem(LS_REMINDERS);
+      const arr = raw ? JSON.parse(raw) : [];
+      if (!Array.isArray(arr)) return [];
+      return arr.filter(
+        (r) => r && typeof r.text === "string" && typeof r.at === "number"
+      );
+    } catch (e) {
+      return [];
+    }
+  }
+  function saveReminders(items) {
+    localStorage.setItem(LS_REMINDERS, JSON.stringify(items));
+    renderReminders();
+  }
+  function reminderId() {
+    return (
+      "r" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7)
+    );
+  }
+  function addReminder(text, at, kind) {
+    const items = loadReminders();
+    const item = {
+      id: reminderId(),
+      kind: kind || "reminder",
+      text: String(text).trim(),
+      at,
+      done: false,
+      createdAt: Date.now(),
+    };
+    items.push(item);
+    saveReminders(items);
+    scheduleReminder(item);
+    return item;
+  }
+  function scheduleReminder(item) {
+    if (!item || item.done) return;
+    const delay = item.at - Date.now();
+    if (reminderTimers.has(item.id)) {
+      clearTimeout(reminderTimers.get(item.id));
+    }
+    reminderTimers.set(
+      item.id,
+      setTimeout(() => fireReminder(item.id), Math.max(0, delay))
+    );
+  }
+  function scheduleAllReminders() {
+    loadReminders().forEach((item) => {
+      if (!item.done) scheduleReminder(item);
+    });
+  }
+  function markReminderDone(id) {
+    const items = loadReminders();
+    const it = items.find((r) => r.id === id);
+    if (!it) return null;
+    it.done = true;
+    saveReminders(items);
+    return it;
+  }
+  // Cuando suena: se marca cumplido, tarjeta visible en la pantalla
+  // principal, burbuja, voz y un sonido de aviso (si el navegador lo
+  // permite). Nunca se pierde: queda en la lista como cumplido.
+  function fireReminder(id) {
+    const it = markReminderDone(id);
+    if (!it) return;
+    reminderTimers.delete(id);
+    const overdue = Date.now() - it.at > 60000;
+    const msg =
+      it.kind === "timer"
+        ? `Ya pasaron los minutos: ${it.text}.`
+        : overdue
+          ? `Te debía recordar: ${it.text}.`
+          : `Te recuerdo: ${it.text}.`;
+    showReminderAlert(msg);
+    addBubble("isis", msg, "Recordatorio");
+    speak(msg);
+    recordExchange(msg);
+    playReminderBeep();
+  }
+  function playReminderBeep() {
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      const ctx = new AC();
+      [0, 300, 600].forEach((delay, i) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.frequency.value = i === 2 ? 1175 : 880;
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        const t0 = ctx.currentTime + delay / 1000;
+        gain.gain.setValueAtTime(0.0001, t0);
+        gain.gain.exponentialRampToValueAtTime(0.2, t0 + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.25);
+        osc.start(t0);
+        osc.stop(t0 + 0.3);
+      });
+    } catch (e) {}
+  }
+  const reminderAlert = $("reminder-alert");
+  const reminderAlertText = $("reminder-alert-text");
+  function showReminderAlert(msg) {
+    if (!reminderAlert || !reminderAlertText) return;
+    reminderAlertText.textContent = "⏰ " + msg;
+    reminderAlert.hidden = false;
+  }
+  const reminderAlertDismiss = $("reminder-alert-dismiss");
+  if (reminderAlertDismiss) {
+    reminderAlertDismiss.addEventListener("click", () => {
+      if (reminderAlert) reminderAlert.hidden = true;
+    });
+  }
+  function renderReminders() {
+    const list = $("reminders-list");
+    if (!list) return;
+    const items = loadReminders()
+      .slice()
+      .sort((a, b) => a.at - b.at);
+    list.innerHTML = "";
+    if (items.length === 0) {
+      const li = document.createElement("li");
+      li.innerHTML =
+        "<span class='muted'>Sin recordatorios. Agrega uno arriba o dime “recuérdame…”.</span>";
+      list.appendChild(li);
+      return;
+    }
+    items.forEach((item) => {
+      const li = document.createElement("li");
+      const span = document.createElement("span");
+      const when = new Date(item.at).toLocaleTimeString("es-MX", {
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+      span.textContent = `${item.done ? "✓ " : "⏰ "}${item.text} · ${
+        item.kind === "timer" ? "temporizador" : when
+      }${item.done ? " · cumplido" : ""}`;
+      const btn = document.createElement("button");
+      btn.textContent = "✕";
+      btn.title = "Borrar";
+      btn.addEventListener("click", () => {
+        if (reminderTimers.has(item.id)) {
+          clearTimeout(reminderTimers.get(item.id));
+          reminderTimers.delete(item.id);
+        }
+        saveReminders(loadReminders().filter((r) => r.id !== item.id));
+      });
+      li.appendChild(span);
+      li.appendChild(btn);
+      list.appendChild(li);
+    });
+  }
+  // "a las 15:30", "a las 3 de la tarde", "a las 8 de la noche", "a las
+  // 9 de la mañana", "a las 7". Si la hora ya pasó hoy, es mañana.
+  function parseReminderClock(text) {
+    const m = String(text || "").match(
+      /a las\s+(\d{1,2})(?::(\d{2}))?\s*(?:de la\s+(tarde|noche|mañana))?/i
+    );
+    if (!m) return null;
+    let h = Number(m[1]);
+    const min = m[2] ? Number(m[2]) : 0;
+    const part = (m[3] || "").toLowerCase();
+    if (h < 0 || h > 23 || min < 0 || min > 59) return null;
+    if (part === "tarde" || part === "noche") {
+      if (h === 12) h = part === "noche" ? 0 : 12;
+      else if (h < 12) h += 12;
+    }
+    const now = new Date();
+    const at = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate(),
+      h,
+      min,
+      0,
+      0
+    );
+    if (at.getTime() <= now.getTime()) at.setDate(at.getDate() + 1);
+    return at.getTime();
+  }
+  // Saca el comando de recordatorio del mensaje: null si no es uno.
+  function extractReminder(text) {
+    const t = String(text || "")
+      .trim()
+      .replace(/^isis[,\s:–—-]*/i, "");
+    if (/qu[eé] (me tienes|tengo) que recordar|mis recordatorios/i.test(t)) {
+      return { kind: "list" };
+    }
+    let m = t.match(/pon(?:me)? (?:un )?temporizador de (\d+)\s*min/i);
+    if (m) {
+      return {
+        kind: "timer",
+        minutes: Number(m[1]),
+        text: `Temporizador de ${m[1]} minutos`,
+      };
+    }
+    m = t.match(/recu[eé]rdame\s+(.+?)\s+en\s+(\d+)\s*min/i);
+    if (m) {
+      return {
+        kind: "reminder",
+        text: m[1].trim().replace(/^que\s+/i, ""),
+        minutes: Number(m[2]),
+      };
+    }
+    m = t.match(/recu[eé]rdame\s+(.+?)\s+a las\s+/i);
+    if (m) {
+      return {
+        kind: "reminder",
+        text: m[1].trim().replace(/^que\s+/i, ""),
+        at: parseReminderClock(t),
+      };
+    }
+    if (/recu[eé]rdame\b/i.test(t)) {
+      // "recuérdame llamar a Griselda" (sin hora): el texto SÍ se
+      // guarda para preguntar a qué hora, no se pierde.
+      const m2 = t.match(/recu[eé]rdame\s+(.+)/i);
+      return {
+        kind: "reminder",
+        text: m2 ? m2[1].trim().replace(/^que\s+/i, "") : "",
+        at: null,
+      };
+    }
+    return null;
+  }
+  async function runReminderCommand(cmd) {
+    if (cmd.kind === "list") {
+      const pending = loadReminders().filter((r) => !r.done);
+      if (!pending.length) {
+        announce("Recordatorios", "No tienes nada pendiente que recordar.", true);
+        openPanel("panel-reminders");
+        return;
+      }
+      const spoken =
+        "Tienes pendiente: " +
+        pending
+          .map(
+            (r) =>
+              `${r.text} a las ${new Date(r.at).toLocaleTimeString("es-MX", {
+                hour: "2-digit",
+                minute: "2-digit",
+              })}`
+          )
+          .join("; ") +
+        ".";
+      announce("Recordatorios", spoken, true);
+      openPanel("panel-reminders");
+      return;
+    }
+    if (cmd.kind === "timer") {
+      if (!cmd.minutes || cmd.minutes <= 0 || cmd.minutes > 600) {
+        announce(
+          "Recordatorios",
+          "Dime de cuántos minutos: por ejemplo, pon un temporizador de 10 minutos.",
+          true
+        );
+        return;
+      }
+      addReminder(cmd.text, Date.now() + cmd.minutes * 60000, "timer");
+      announce(
+        "Recordatorios",
+        `Listo, temporizador de ${cmd.minutes} minutos. Te aviso cuando se acabe.`,
+        true
+      );
+      return;
+    }
+    if (!cmd.text) {
+      announce(
+        "Recordatorios",
+        "¿Qué te recuerdo? Dime qué y a qué hora: por ejemplo, recuérdame llamar a Griselda a las 5 de la tarde.",
+        true
+      );
+      return;
+    }
+    if (cmd.minutes) {
+      addReminder(cmd.text, Date.now() + cmd.minutes * 60000, "reminder");
+      announce(
+        "Recordatorios",
+        `Listo, te recuerdo "${cmd.text}" en ${cmd.minutes} minutos.`,
+        true
+      );
+      return;
+    }
+    if (!cmd.at) {
+      announce(
+        "Recordatorios",
+        `¿A qué hora te recuerdo "${cmd.text}"? Dime la hora: por ejemplo, a las 5 de la tarde.`,
+        true
+      );
+      return;
+    }
+    addReminder(cmd.text, cmd.at, "reminder");
+    const hora = new Date(cmd.at).toLocaleTimeString("es-MX", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    announce(
+      "Recordatorios",
+      `Listo, te recuerdo "${cmd.text}" a las ${hora}.`,
+      true
+    );
+  }
+  const btnAddReminder = $("btn-add-reminder");
+  if (btnAddReminder) {
+    btnAddReminder.addEventListener("click", () => {
+      const textEl = $("reminder-text");
+      const timeEl = $("reminder-time");
+      const text = textEl ? textEl.value.trim() : "";
+      const time = timeEl ? timeEl.value.trim() : "";
+      if (!text || !time) {
+        announce("Recordatorios", "Escribe qué te recuerdo y a qué hora.", false);
+        return;
+      }
+      const parts = time.split(":");
+      const h = Number(parts[0]);
+      const min = Number(parts[1] || "0");
+      if (Number.isNaN(h) || h < 0 || h > 23 || Number.isNaN(min) || min < 0 || min > 59) {
+        announce("Recordatorios", "Esa hora no es válida.", false);
+        return;
+      }
+      const now = new Date();
+      const at = new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, min, 0, 0);
+      if (at.getTime() <= now.getTime()) at.setDate(at.getDate() + 1);
+      addReminder(text, at.getTime(), "reminder");
+      if (textEl) textEl.value = "";
+      announce(
+        "Recordatorios",
+        `Listo, te recuerdo "${text}" a las ${at.toLocaleTimeString("es-MX", {
+          hour: "2-digit",
+          minute: "2-digit",
+        })}.`,
+        false
+      );
+    });
+  }
+  const btnAddTimer = $("btn-add-timer");
+  if (btnAddTimer) {
+    btnAddTimer.addEventListener("click", () => {
+      const minEl = $("timer-minutes");
+      const mins = minEl ? Number(minEl.value) : NaN;
+      if (!mins || mins <= 0 || mins > 600) {
+        announce("Recordatorios", "Pon cuántos minutos: de 1 a 600.", false);
+        return;
+      }
+      addReminder(`Temporizador de ${mins} minutos`, Date.now() + mins * 60000, "timer");
+      if (minEl) minEl.value = "";
+      announce(
+        "Recordatorios",
+        `Listo, temporizador de ${mins} minutos. Te aviso cuando se acabe.`,
+        false
+      );
+    });
+  }
+
+  // --- noticias ---
+  async function runNews(fromVoice) {
+    const { fableaiKey } = getKeys();
+    const box = $("news-result");
+    if (box) box.innerHTML = '<p class="loading">BUSCANDO NOTICIAS…</p>';
+    setOrbStatus("Isis está buscando las noticias…");
+    try {
+      const { ok, data } = await postJSON("/api/news", { fableaiKey });
+      if (!ok || !data.summary) {
+        const msg =
+          (data && data.error) || "No pude traer las noticias ahora mismo.";
+        if (box) box.innerHTML = `<p>${markdownToHtml(msg)}</p>`;
+        announce("Noticias", msg, fromVoice);
+        setOrbStatus(idleStatus());
+        return;
+      }
+      const summary = String(data.summary).trim();
+      if (box) box.innerHTML = markdownToHtml(summary);
+      announce("Noticias", summary, fromVoice);
+      setOrbStatus(idleStatus());
+    } catch (e) {
+      const msg = "No pude traer las noticias ahora mismo.";
+      if (box) box.innerHTML = `<p>${markdownToHtml(msg)}</p>`;
+      announce("Noticias", msg, fromVoice);
+      setOrbStatus(idleStatus());
+    }
+  }
+  function isNewsRequest(text) {
+    return /qu[eé] hay de nuevo|dame las noticias|resumen de noticias|noticias (de )?hoy|las noticias/i.test(
+      text
+    );
+  }
+  const btnNews = $("btn-news");
+  if (btnNews) {
+    btnNews.addEventListener("click", () => runNews(false));
+  }
+
+  // --- dinero (comisiones) ---
+  // Números CONFIRMADOS por Santiago (captura 23 nov 2026, págs. 3–5
+  // de 28). RECIBE: PCN $900 (1–3) / $1,000 (4) / $1,200 (5–6) /
+  // $1,400 (7); NIDEC $1,500 fijo; DALTILE $1,000 (1–2) / $1,100 (3) /
+  // $1,150 (4) / $1,250 (5–6) / $1,400 (8), el de 7 sin confirmar.
+  // PAGA a reclutadores: PCN $540 / $600 / $720 / $840; NIDEC $900.
+  // La tasa del nivel aplica a TODOS los válidos de esa empresa/semana;
+  // solo cuentan los que llegan al día 2; semana sáb–vie, pago viernes.
+  // Bono mensual: $2,000 por cada 10 válidos (combinado). Estos números
+  // son SOLO de Isis: el bot de Orlando enseña solo los de
+  // reclutadores, y aquí no se tocan.
+  function moneyTier(n, tiers) {
+    if (!n || n <= 0) return 0;
+    for (const [max, rate] of tiers) {
+      if (n <= max) return rate;
+    }
+    return tiers[tiers.length - 1][1];
+  }
+  const MONEY_RATES = {
+    pcn: {
+      receive: [
+        [3, 900],
+        [4, 1000],
+        [6, 1200],
+        [Infinity, 1400],
+      ],
+      pay: [
+        [3, 540],
+        [4, 600],
+        [6, 720],
+        [Infinity, 840],
+      ],
+    },
+    nidec: {
+      receive: [[Infinity, 1500]],
+      pay: [[Infinity, 900]],
+    },
+    daltile: {
+      // El nivel de 7 no está confirmado: se calcula con $1,250 (como
+      // 5–6) y se avisa en el resultado. De Daltile no hay pago a
+      // reclutadores registrado: se cuenta en $0 y se avisa.
+      receive: [
+        [2, 1000],
+        [3, 1100],
+        [4, 1150],
+        [6, 1250],
+        [7, 1250],
+        [Infinity, 1400],
+      ],
+      pay: [[Infinity, 0]],
+    },
+  };
+  function computeMoney(counts) {
+    const n = {
+      pcn: Math.max(0, Math.floor(Number(counts.pcn) || 0)),
+      nidec: Math.max(0, Math.floor(Number(counts.nidec) || 0)),
+      daltile: Math.max(0, Math.floor(Number(counts.daltile) || 0)),
+    };
+    const incentive = Math.max(0, Math.floor(Number(counts.incentive) || 0));
+    const monthValid = Math.max(0, Math.floor(Number(counts.monthValid) || 0));
+    const per = {};
+    for (const key of ["pcn", "nidec", "daltile"]) {
+      const receive = n[key] * moneyTier(n[key], MONEY_RATES[key].receive);
+      const pay = n[key] * moneyTier(n[key], MONEY_RATES[key].pay);
+      per[key] = { n: n[key], receive, pay, keep: receive - pay };
+    }
+    const totalReceive =
+      per.pcn.receive + per.nidec.receive + per.daltile.receive;
+    const totalPay =
+      per.pcn.pay + per.nidec.pay + per.daltile.pay + incentive;
+    const bonus = Math.floor(monthValid / 10) * 2000;
+    return {
+      per,
+      incentive,
+      monthValid,
+      totalReceive,
+      totalPay,
+      totalKeep: totalReceive - totalPay,
+      bonus,
+      grandReceive: totalReceive + bonus,
+      daltile7: n.daltile === 7,
+    };
+  }
+  function moneyFmt(v) {
+    return "$" + Number(v || 0).toLocaleString("es-MX");
+  }
+  function moneySummaryText(m) {
+    const parts = [];
+    if (m.per.pcn.n) {
+      parts.push(
+        `PCN: ${m.per.pcn.n} válidos, recibes ${moneyFmt(m.per.pcn.receive)}`
+      );
+    }
+    if (m.per.nidec.n) {
+      parts.push(
+        `NIDEC: ${m.per.nidec.n} válidos, recibes ${moneyFmt(m.per.nidec.receive)}`
+      );
+    }
+    if (m.per.daltile.n) {
+      parts.push(
+        `Daltile: ${m.per.daltile.n} válidos, recibes ${moneyFmt(m.per.daltile.receive)}`
+      );
+    }
+    if (!parts.length) return "";
+    let s =
+      "Esta semana llevas: " +
+      parts.join("; ") +
+      `. En total recibes ${moneyFmt(m.totalReceive)}, pagas ${moneyFmt(m.totalPay)} y te quedan ${moneyFmt(m.totalKeep)}.`;
+    if (m.bonus) {
+      s += ` Más tu bono mensual de ${moneyFmt(m.bonus)}.`;
+    }
+    return s;
+  }
+  function renderMoneyResult(m) {
+    const box = $("money-result");
+    if (!box) return;
+    const row = (label, d) =>
+      d.n
+        ? `<div class="row"><span class="label">${label} · ${d.n} válidos</span><span class="value">Recibes ${moneyFmt(d.receive)} · Pagas ${moneyFmt(d.pay)} · Quedan ${moneyFmt(d.keep)}</span></div>`
+        : "";
+    box.innerHTML = `
+    <div class="orlando-panel">
+      ${row("PCN", m.per.pcn)}
+      ${row("NIDEC", m.per.nidec)}
+      ${row("Daltile", m.per.daltile)}
+      <div class="row"><span class="label">Total a recibir</span><span class="value">${moneyFmt(m.totalReceive)}</span></div>
+      <div class="row"><span class="label">Total a pagar${m.incentive ? ` (incluye incentivo ${moneyFmt(m.incentive)})` : ""}</span><span class="value">${moneyFmt(m.totalPay)}</span></div>
+      ${m.bonus ? `<div class="row"><span class="label">Bono mensual (${m.monthValid} válidos este mes)</span><span class="value">${moneyFmt(m.bonus)}</span></div>` : ""}
+      <div class="row"><span class="label">Te quedan</span><span class="value">${moneyFmt(m.totalKeep)}</span></div>
+    </div>
+    ${m.daltile7 ? `<p class="muted small">Ojo: el nivel de Daltile con 7 válidos no está confirmado; lo calculé con $1,250, como el de 5–6. Confírmalo con tu coordinador.</p>` : ""}
+    ${m.per.daltile.n ? `<p class="muted small">De Daltile no tengo registrado cuánto pagas a reclutadores, así que lo conté en $0.</p>` : ""}
+    <p class="muted small">Solo cuentan los válidos que llegan al día 2. Semana sábado a viernes, pago los viernes.</p>`;
+  }
+  function loadMoneyCounts() {
+    try {
+      const raw = localStorage.getItem(LS_MONEY);
+      const o = raw ? JSON.parse(raw) : {};
+      return {
+        pcn: 0,
+        nidec: 0,
+        daltile: 0,
+        incentive: 0,
+        monthValid: 0,
+        ...(o && typeof o === "object" ? o : {}),
+      };
+    } catch (e) {
+      return { pcn: 0, nidec: 0, daltile: 0, incentive: 0, monthValid: 0 };
+    }
+  }
+  function saveMoneyCounts(c) {
+    localStorage.setItem(LS_MONEY, JSON.stringify(c));
+  }
+  function readMoneyForm() {
+    const num = (id) => {
+      const el = $(id);
+      return el ? Number(el.value) || 0 : 0;
+    };
+    return {
+      pcn: num("money-pcn"),
+      nidec: num("money-nidec"),
+      daltile: num("money-daltile"),
+      incentive: num("money-incentive"),
+      monthValid: num("money-month"),
+    };
+  }
+  function fillMoneyForm(c) {
+    const set = (id, v) => {
+      const el = $(id);
+      if (el) el.value = v ? String(v) : "";
+    };
+    set("money-pcn", c.pcn);
+    set("money-nidec", c.nidec);
+    set("money-daltile", c.daltile);
+    set("money-incentive", c.incentive);
+    set("money-month", c.monthValid);
+  }
+  const btnMoney = $("btn-money");
+  if (btnMoney) {
+    btnMoney.addEventListener("click", () => {
+      const c = readMoneyForm();
+      saveMoneyCounts(c);
+      const m = computeMoney(c);
+      renderMoneyResult(m);
+      const spoken =
+        moneySummaryText(m) ||
+        "Todavía no me has dicho cuántos válidos llevas esta semana. Dime por empresa: PCN, NIDEC y Daltile.";
+      announce("Dinero", spoken, false);
+    });
+  }
+  // "llevo 4 de PCN", "llevo 2 de NIDEC y 1 de Daltile": guarda los
+  // conteos y dice los totales de lo que ya lleva.
+  function extractMoneyCounts(text) {
+    const t = String(text || "").toLowerCase();
+    const out = {};
+    const re = /(\d+)\s+de\s+(pcn|nidec|daltile)/g;
+    let m;
+    while ((m = re.exec(t))) out[m[2]] = Number(m[1]);
+    return out;
+  }
+  function isMoneyQuestion(text) {
+    return /cu[aá]nto (llevo ganado|gano esta semana|llevo|he ganado)|cu[aá]nto (voy|llevo) esta semana|mis ganancias|cu[aá]nto dinero/i.test(
+      text
+    );
+  }
+  async function runMoneyQuestion(fromVoice) {
+    const c = loadMoneyCounts();
+    const m = computeMoney(c);
+    const spoken = moneySummaryText(m);
+    if (!spoken) {
+      const msg =
+        "Todavía no me has dicho cuántos válidos llevas esta semana. ¿Cuántos de PCN, cuántos de NIDEC y cuántos de Daltile?";
+      announce("Dinero", msg, fromVoice);
+      openPanel("panel-money");
+      return;
+    }
+    fillMoneyForm(c);
+    renderMoneyResult(m);
+    announce("Dinero", spoken, fromVoice);
+    openPanel("panel-money");
+  }
+  function runMoneySet(counts) {
+    const c = loadMoneyCounts();
+    const names = { pcn: "PCN", nidec: "NIDEC", daltile: "Daltile" };
+    const setParts = [];
+    for (const k of ["pcn", "nidec", "daltile"]) {
+      if (typeof counts[k] === "number") {
+        c[k] = counts[k];
+        setParts.push(`${counts[k]} de ${names[k]}`);
+      }
+    }
+    if (!setParts.length) return false;
+    saveMoneyCounts(c);
+    fillMoneyForm(c);
+    const m = computeMoney(c);
+    renderMoneyResult(m);
+    const missing = ["pcn", "nidec", "daltile"]
+      .filter((k) => !c[k])
+      .map((k) => names[k]);
+    let msg = `Anotado: ${setParts.join(", ")}.`;
+    const totals = moneySummaryText(m);
+    if (totals) msg += " " + totals;
+    if (missing.length) {
+      msg += ` Todavía no me has dicho ${missing.join(" ni ")}.`;
+    }
+    announce("Dinero", msg, true);
+    return true;
   }
 
   // ---------------------------------------------------------- menú hamburguesa y paneles
@@ -2358,6 +3673,10 @@
     ["menu-analyze", "panel-analyze"],
     ["menu-scan", "panel-scan"],
     ["menu-systems", "panel-systems"],
+    ["menu-music", "panel-music"],
+    ["menu-reminders", "panel-reminders"],
+    ["menu-news", "panel-news"],
+    ["menu-money", "panel-money"],
   ];
   MENU_ITEMS.forEach(([menuId, panelId]) => {
     const item = $(menuId);
@@ -2388,20 +3707,29 @@
     const d = $("cfg-textbee-device")
       ? $("cfg-textbee-device").value.trim()
       : "";
+    const sId = $("cfg-spotify-id") ? $("cfg-spotify-id").value.trim() : "";
+    const sSecret = $("cfg-spotify-secret")
+      ? $("cfg-spotify-secret").value.trim()
+      : "";
     if (f) localStorage.setItem(LS_FABLEAI, f);
     if (n) localStorage.setItem(LS_N8N, n);
     if (w) localStorage.setItem(LS_WHATSAPP, w);
     if (t) localStorage.setItem(LS_TEXTBEE, t);
     if (d) localStorage.setItem(LS_TEXTBEE_DEVICE, d);
+    if (sId) localStorage.setItem(LS_SPOTIFY_ID, sId);
+    if (sSecret) localStorage.setItem(LS_SPOTIFY_SECRET, sSecret);
     $("cfg-fableai").value = "";
     $("cfg-n8n").value = "";
     $("cfg-whatsapp").value = "";
     if ($("cfg-textbee")) $("cfg-textbee").value = "";
     if ($("cfg-textbee-device")) $("cfg-textbee-device").value = "";
+    if ($("cfg-spotify-id")) $("cfg-spotify-id").value = "";
+    if ($("cfg-spotify-secret")) $("cfg-spotify-secret").value = "";
     const msg = $("config-msg");
     msg.hidden = false;
     msg.textContent = "Claves guardadas en este navegador.";
     refreshKeyUI();
+    renderMusicStatus();
     loadOrlando();
   });
   $("btn-clear-config").addEventListener("click", () => {
@@ -2410,10 +3738,13 @@
     localStorage.removeItem(LS_WHATSAPP);
     localStorage.removeItem(LS_TEXTBEE);
     localStorage.removeItem(LS_TEXTBEE_DEVICE);
+    localStorage.removeItem(LS_SPOTIFY_ID);
+    localStorage.removeItem(LS_SPOTIFY_SECRET);
     const msg = $("config-msg");
     msg.hidden = false;
     msg.textContent = "Claves borradas de este navegador.";
     refreshKeyUI();
+    renderMusicStatus();
     loadOrlando();
   });
 
@@ -2470,6 +3801,12 @@
   renderFacts();
   renderContacts();
   renderMemory();
+  renderMusicStatus();
+  renderReminders();
+  scheduleAllReminders();
+  fillMoneyForm(loadMoneyCounts());
+  // Si Spotify regresó con ?code=, se intercambia por tokens.
+  handleSpotifyCallback();
   loadOrlando();
   // Las voces del teléfono llegan tarde en Android: se escucha el evento.
   if ("speechSynthesis" in window) {
