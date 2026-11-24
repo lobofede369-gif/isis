@@ -8,25 +8,25 @@ enseñan.
 ## Qué hace
 
 - **Voz**: toca el círculo y habla; Isis contesta por voz. Con la clave
-  de Google Cloud en Configuración, habla con una voz natural de Google
-  Cloud Text-to-Speech (por defecto `es-MX-Neural2-A`, femenina, español
-  de México); sin clave, o si Google falla o se acaba el saldo, usa la
+  de Azure en Configuración, habla con una voz natural de Microsoft
+  Azure AI Speech (por defecto `es-MX-DaliaNeural`, femenina, español
+  de México); sin clave, o si Azure falla o se acaba el saldo, usa la
   voz del teléfono (Web Speech API) como antes, así Isis nunca se queda
-  muda. En **Configuración** se elige su voz de Google (lista filtrada a
+  muda. En **Configuración** se elige su voz de Azure (lista filtrada a
   español, con botón "Probar voz") y también la voz del teléfono (lista
   de voces en español del teléfono: por defecto toma la más femenina y
   natural disponible, en orden es-MX, es-US, es-419, es-ES, prefiriendo
-  las voces femeninas "Natural"/"Neural" de Google). Con la voz del
+  las voces femeninas "Natural"/"Neural" del motor del teléfono). Con la voz del
   teléfono, Isis habla con el tono y la velocidad de su ánimo (alegre
   suena más aguda y rápida; preocupada, más baja y lenta; enojada o
   frustrada, grave y pausada) y respeta la puntuación: divide cada
   respuesta en oraciones y hace una pausa que depende de cómo termina
   cada una (más larga tras "!" o "?", corta tras ".", con una variación
   pequeña para no sonar metronómica), para que las comas y los puntos
-  suenen naturales. Con la voz de Google, la emoción la da la propia
+  suenen naturales. Con la voz de Azure, la emoción la da la propia
   voz. Isis usa el nombre "Santiago" como máximo una vez por respuesta,
   y solo cuando suena natural. Las voces del teléfono son las del propio
-  teléfono (Google TTS en Android): para la más natural, descarga una
+  teléfono (el motor de texto a voz de Android): para la más natural, descarga una
   voz de alta calidad en español en los ajustes de texto a voz del
   teléfono.
 - **Escucha continua ("Isis")**: con la página abierta, di "Isis" y se
@@ -89,30 +89,29 @@ enseñan.
   restaurante (429/502/503), el proxy reintenta hasta 3 veces con
   backoff (inmediato, +1 s, +2 s) y si persiste avisa en español claro.
 
-## Voz de Google Cloud
+## Voz de Azure AI Speech
 
-Isis habla con Google Cloud Text-to-Speech, una voz mucho más natural
+Isis habla con Microsoft Azure AI Speech, una voz mucho más natural
 que la del teléfono:
 
-1. En console.cloud.google.com crea un proyecto.
-2. Activa la **facturación con tarjeta** en ese proyecto. Google la exige
-   para activar el proyecto aunque **no se cobra nada dentro del límite
-   gratis**.
-3. Habilita la API **Cloud Text-to-Speech**.
-4. Crea una **clave API** restringida a esa API (Credentials → Create
-   Credentials → API key → restringir a Cloud Text-to-Speech API).
-5. Pega la clave en Isis, en **Configuración → Clave de Google Cloud**,
-   y guarda. En el selector de abajo elige la voz (por defecto
-   `es-MX-Neural2-A`, femenina, español de México); el botón "Probar
-   voz" la prueba con una frase cálida.
+1. En portal.azure.com crea un recurso **Speech** (Azure AI Services).
+2. Elige el plan **Free (F0)**: es gratis, 500,000 caracteres al mes de
+   voces neurales (~11 horas de voz), con límite de 20 peticiones por
+   minuto. Para crear la cuenta Azure pide una tarjeta para verificar la
+   identidad, pero el plan F0 no cobra nada.
+3. En el recurso, copia la **clave** (Keys and Endpoint) y anota la
+   **región** (por ejemplo `eastus`).
+4. Pega la clave y la región en Isis, en **Configuración → Clave de
+   Azure** y **Región de Azure**, y guarda. En el selector de abajo
+   elige la voz (por defecto `es-MX-DaliaNeural`, femenina, español de
+   México); el botón "Probar voz" la prueba con una frase cálida.
 
-**Plan gratis**: ~1 millón de caracteres al mes para las voces
-Neural2/WaveNet (4 millones para las Standard). Eso son unas 4-5 horas
-de voz al mes, muchísimo más que los 10,000 caracteres de otros
-servicios. Si se acaba el saldo, Isis lo dice y vuelve sola a la voz
-del teléfono; no se queda muda. La clave vive **solo en el navegador de
-Santiago** (localStorage), como las demás: el servidor la recibe en cada
-llamada a `/api/tts` y no la guarda.
+**Plan gratis**: 500,000 caracteres al mes de voces neurales. Eso son
+unas 11 horas de voz al mes, muchísimo más que los 10,000 caracteres de
+otros servicios gratis. Si se acaba el saldo, Isis lo dice y vuelve sola
+a la voz del teléfono; no se queda muda. La clave y la región viven
+**solo en el navegador de Santiago** (localStorage), como las demás: el
+servidor las recibe en cada llamada a `/api/tts` y no las guarda.
 
 ## Memoria
 
@@ -191,11 +190,9 @@ Dentro de la app, en **Configuración**, Santiago pega una sola vez:
   Configuración. Plan gratis: 300 SMS/mes, 50/día, 1 dispositivo, sin
   tarjeta. El teléfono debe estar prendido, con señal y con TextBee activo
   cuando se mande el SMS; si está apagado o sin internet, el SMS no sale.
-- **Clave de Google Cloud** (voz natural): se crea en
-  console.cloud.google.com (proyecto → facturación con tarjeta aunque no
-  se cobra dentro del límite gratis → habilitar la API Cloud
-  Text-to-Speech → clave API restringida a esa API). Ver **Voz de Google
-  Cloud** arriba.
+- **Clave de Azure** (voz natural): se crea en portal.azure.com
+  (recurso Speech en plan Free F0 → copiar la clave y la región).
+  Ver **Voz de Azure AI Speech** arriba.
 
 Las claves viven **solo en el localStorage del navegador**. Nunca se
 guardan en el servidor, nunca van a ningún archivo del repo y nunca se
@@ -214,8 +211,8 @@ cada llamada y las usa solo para hablar con FableAI / n8n.
 | POST | `/api/send-whatsapp` | `{ to, message, whatsappToken }` — manda un texto por WhatsApp desde el bot |
 | POST | `/api/send-sms` | `{ to, message, textbeeKey, deviceId? }` — manda un SMS desde su número (TextBee) |
 | POST | `/api/send-sms` | `{ to, message, textbeeKey }` — manda un SMS por TextBee desde tu número |
-| POST | `/api/tts` | `{ text, googleKey, voiceName? }` — voz de Google Cloud TTS (devuelve audio en base64) |
-| GET | `/api/voices?key=` | Lista de voces de Google Cloud TTS (name, languageCodes, ssmlGender) |
+| POST | `/api/tts` | `{ text, azureKey, azureRegion, voiceName? }` — voz de Azure AI Speech (devuelve audio en base64) |
+| POST | `/api/voices` | `{ azureKey, azureRegion }` — lista de voces de Azure AI Speech (name, languageCodes, ssmlGender) |
 | POST | `/api/mitote` | `{ action, params }` — proxy a El Mitote Comandas (lista blanca; lo destructivo exige `params.confirmed: true`; reintenta hasta 3 veces ante 429/502/503) |
 
 ## El Mitote: conexión y token (solo en el servidor)
