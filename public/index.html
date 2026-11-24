@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#050b14" />
+  <title>Isis — Tu asistente</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Rajdhani:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div class="bg-glow"></div>
+  <div class="bg-grid"></div>
+  <div class="particles"></div>
+  <div class="scanline"></div>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-dot"></span>
+      <h1>Isis</h1>
+      <span class="brand-sub">tu asistente</span>
+    </div>
+    <button id="btn-config" class="icon-btn" aria-label="Configuración">⚙️</button>
+  </header>
+
+  <main>
+    <!-- Orbe de voz -->
+    <section class="orb-section">
+      <button id="orb" class="orb" aria-label="Toca para hablar">
+        <span class="orb-ring"></span>
+        <span class="orb-ring pulse"></span>
+        <span class="orb-ring pulse delay"></span>
+        <span class="orb-core">🎙️</span>
+      </button>
+      <p id="orb-status" class="orb-status">Toca el círculo para hablar</p>
+      <p id="voice-note" class="voice-note" hidden></p>
+    </section>
+
+    <!-- Aviso de clave -->
+    <div id="key-banner" class="banner" hidden>
+      Todavía no tengo tu clave de FableAI. Pégala en
+      <button class="link-btn" id="banner-config">Configuración</button>
+      para que pueda pensar en vivo con Claude.
+    </div>
+
+    <!-- Conversación -->
+    <section class="card">
+      <h2>Conversación</h2>
+      <div id="chat" class="chat"></div>
+      <form id="chat-form" class="chat-form">
+        <input id="chat-input" type="text" placeholder="Escríbele a Isis…" autocomplete="off" />
+        <button type="submit" class="send-btn" aria-label="Enviar">➤</button>
+      </form>
+      <p class="hint">Isis responde por voz. Las preguntas de clima usan el clima en vivo; nunca culpan a la clave de Claude.</p>
+    </section>
+
+    <!-- Orlando -->
+    <section class="card">
+      <div class="card-head">
+        <h2>Orlando · Bot PCN</h2>
+        <button id="btn-orlando" class="small-btn">Actualizar</button>
+      </div>
+      <div id="orlando-panel" class="orlando-panel">
+        <p class="muted">Cargando estado de Orlando…</p>
+      </div>
+    </section>
+
+    <!-- Análisis -->
+    <section class="card">
+      <div class="card-head">
+        <h2>Análisis de tu entorno</h2>
+        <button id="btn-analyze" class="small-btn">Analizar</button>
+      </div>
+      <div id="analysis" class="analysis">
+        <p class="muted">Isis revisa Orlando, tus reclutadores y tus pendientes, y te recomienda decisiones.</p>
+      </div>
+    </section>
+
+    <!-- Lo aprendido -->
+    <section class="card">
+      <h2>Lo que Isis ha aprendido</h2>
+      <ul id="facts-list" class="facts-list"></ul>
+      <form id="fact-form" class="fact-form">
+        <input id="fact-input" type="text" placeholder="Enséñale algo a Isis…" autocomplete="off" />
+        <button type="submit" class="small-btn">Enseñar</button>
+      </form>
+    </section>
+
+    <!-- Configuración -->
+    <section id="config" class="card config" hidden>
+      <h2>Configuración</h2>
+      <p class="muted">
+        Tus claves viven <strong>solo en este navegador</strong> (localStorage).
+        Nunca se guardan en el servidor ni en ningún archivo.
+      </p>
+      <label class="field">
+        <span>Clave de FableAI (Claude)</span>
+        <input id="cfg-fableai" type="password" placeholder="sk-ant-fai-…" autocomplete="off" />
+        <span id="cfg-fableai-state" class="field-state">Sin guardar</span>
+      </label>
+      <label class="field">
+        <span>Clave de API de n8n (revisión en vivo de Orlando)</span>
+        <input id="cfg-n8n" type="password" placeholder="Pégala aquí…" autocomplete="off" />
+        <span id="cfg-n8n-state" class="field-state">Sin guardar</span>
+      </label>
+      <div class="config-actions">
+        <button id="btn-save-config" class="primary-btn">Guardar claves</button>
+        <button id="btn-clear-config" class="small-btn danger">Borrar claves</button>
+      </div>
+      <p id="config-msg" class="config-msg" hidden></p>
+      <p class="muted small">
+        La clave de FableAI se crea en el panel de FableAI (API Keys).
+        La clave de API de n8n se crea en n8n → Settings → n8n API.
+      </p>
+    </section>
+  </main>
+
+  <footer>Isis responde por voz · Toca el círculo para hablar</footer>
+
+  <script src="/app.js"></script>
+</body>
+</html>
