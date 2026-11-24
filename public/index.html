@@ -45,6 +45,12 @@
       <button id="alerts-dismiss" class="icon-btn alert-dismiss" type="button" aria-label="Descartar alerta">✕</button>
     </div>
 
+    <!-- Recordatorio que suena: tarjeta visible en la pantalla principal -->
+    <div id="reminder-alert" class="reminder-alert" hidden>
+      <span id="reminder-alert-text" class="alerts-text"></span>
+      <button id="reminder-alert-dismiss" class="icon-btn alert-dismiss" type="button" aria-label="Descartar recordatorio">✕</button>
+    </div>
+
     <!-- Conversación (plegable: colapsada por defecto, solo la última respuesta) -->
     <section class="card chat-card collapsed" id="chat-card">
       <button id="chat-toggle" class="chat-toggle" type="button" aria-expanded="false" aria-controls="chat-body">
@@ -93,6 +99,10 @@
       <button type="button" class="menu-item" id="menu-analyze" data-panel="panel-analyze">📊 Análisis</button>
       <button type="button" class="menu-item" id="menu-scan" data-panel="panel-scan">🔍 Escanear</button>
       <button type="button" class="menu-item" id="menu-systems" data-panel="panel-systems">🖥️ Sistemas</button>
+      <button type="button" class="menu-item" id="menu-music" data-panel="panel-music">🎵 Música</button>
+      <button type="button" class="menu-item" id="menu-reminders" data-panel="panel-reminders">⏰ Recordatorios</button>
+      <button type="button" class="menu-item" id="menu-news" data-panel="panel-news">📰 Noticias</button>
+      <button type="button" class="menu-item" id="menu-money" data-panel="panel-money">💰 Dinero</button>
     </nav>
     <p class="drawer-hint">Todo lo de Isis vive aquí. Toca un módulo para abrirlo.</p>
   </aside>
@@ -136,6 +146,16 @@
         <input id="cfg-textbee-device" type="text" placeholder="Pégalo aquí… (puedes dejarlo vacío)" autocomplete="off" />
         <span id="cfg-textbee-device-state" class="field-state">Sin guardar (opcional)</span>
       </label>
+      <label class="field">
+        <span>Client ID de Spotify (para poner música)</span>
+        <input id="cfg-spotify-id" type="text" placeholder="Pégalo aquí…" autocomplete="off" />
+        <span id="cfg-spotify-id-state" class="field-state">Sin guardar</span>
+      </label>
+      <label class="field">
+        <span>Client Secret de Spotify</span>
+        <input id="cfg-spotify-secret" type="password" placeholder="Pégalo aquí…" autocomplete="off" />
+        <span id="cfg-spotify-secret-state" class="field-state">Sin guardar</span>
+      </label>
       <div class="config-actions">
         <button id="btn-save-config" class="primary-btn">Guardar claves</button>
         <button id="btn-clear-config" class="small-btn danger">Borrar claves</button>
@@ -146,6 +166,7 @@
         La clave de API de n8n se crea en n8n → Settings → n8n API.
         El token de WhatsApp se consigue en Meta for Developers → tu app «PCN Bot» → WhatsApp → API Setup → Token de acceso.
         La clave de TextBee y el ID del dispositivo se consiguen en textbee.dev: crea una cuenta, instala la app en tu teléfono, agrega el dispositivo escaneando el QR y crea una API key. Sin el ID, Isis usa tu dispositivo por defecto.
+        El Client ID y el Client Secret de Spotify se consiguen en developer.spotify.com/dashboard: crea una app (Create app), en Redirect URIs pon la dirección de Isis (la misma que ves en el navegador) y copia los dos datos aquí. Spotify exige cuenta Premium para que Isis controle la reproducción.
       </p>
     </section>
 
@@ -274,6 +295,86 @@
         <p class="muted">Isis revisa sus sistemas sola al abrir la app, y aquí cuando tú se lo pidas: ella misma, Orlando, El Mitote y tu teléfono.</p>
       </div>
       <p class="muted small">La revisión es al abrir la app y bajo demanda, no un servicio en segundo plano: en Render Free Isis se duerme y no puede vigilar sola.</p>
+    </section>
+
+    <!-- Música (Spotify) -->
+    <section id="panel-music" class="card panel-section" hidden>
+      <h2>Música</h2>
+      <p id="music-status" class="muted">Spotify sin conectar.</p>
+      <p class="muted small">Spotify exige <strong>Premium</strong> para controlar la reproducción. Con una cuenta gratis Isis no puede poner, pausar ni cambiar canciones desde aquí.</p>
+      <div class="config-actions">
+        <button id="btn-spotify-connect" class="primary-btn" type="button">Conectar Spotify</button>
+        <button id="btn-spotify-disconnect" class="small-btn danger" type="button" hidden>Desconectar Spotify</button>
+      </div>
+      <p class="muted small">Para conectar: crea una app en <strong>developer.spotify.com/dashboard</strong> → Create app → en Redirect URIs pon <span id="spotify-redirect-uri"></span> → copia el Client ID y el Client Secret en Configuración.</p>
+      <div class="fact-form">
+        <input id="music-search-input" type="text" placeholder="Canción o artista…" autocomplete="off" />
+        <button id="btn-music-search" class="small-btn" type="button">Buscar</button>
+      </div>
+      <ul id="music-results" class="facts-list music-results"></ul>
+      <div class="music-controls">
+        <button id="btn-music-play" class="small-btn" type="button">▶ Poner música</button>
+        <button id="btn-music-pause" class="small-btn" type="button">⏸ Pausar</button>
+        <button id="btn-music-next" class="small-btn" type="button">⏭ Siguiente</button>
+        <button id="btn-music-now" class="small-btn" type="button">¿Qué suena?</button>
+      </div>
+      <p id="music-now" class="muted"></p>
+    </section>
+
+    <!-- Recordatorios y temporizadores -->
+    <section id="panel-reminders" class="card panel-section" hidden>
+      <h2>Recordatorios</h2>
+      <p class="muted">Isis te avisa con sonido, voz y una tarjeta cuando llega la hora. <strong>Funcionan con la app abierta</strong>: si cierras Isis, el aviso llega cuando la vuelvas a abrir (no es un servicio en segundo plano).</p>
+      <div class="fact-form">
+        <input id="reminder-text" type="text" placeholder="¿Qué te recuerdo? (ej. llamar a Griselda)" autocomplete="off" />
+        <input id="reminder-time" type="time" aria-label="Hora del recordatorio" />
+        <button id="btn-add-reminder" class="small-btn" type="button">Agregar</button>
+      </div>
+      <div class="fact-form">
+        <input id="timer-minutes" type="number" min="1" max="600" placeholder="Minutos" autocomplete="off" />
+        <button id="btn-add-timer" class="small-btn" type="button">Iniciar temporizador</button>
+      </div>
+      <ul id="reminders-list" class="facts-list"></ul>
+    </section>
+
+    <!-- Noticias -->
+    <section id="panel-news" class="card panel-section" hidden>
+      <h2>Noticias</h2>
+      <p class="muted">El resumen del día, en español y corto: máximo 5 noticias, una línea cada una.</p>
+      <button id="btn-news" class="primary-btn" type="button">📰 Resumen de noticias</button>
+      <div id="news-result" class="analysis">
+        <p class="muted">Todavía no hay resumen. Toca el botón y Isis te lo lee.</p>
+      </div>
+    </section>
+
+    <!-- Dinero (comisiones) -->
+    <section id="panel-money" class="card panel-section" hidden>
+      <h2>Dinero</h2>
+      <p class="muted">¿Cuánto llevas ganado esta semana? Pon cuántos válidos llevas por empresa (solo cuentan los que llegan al día 2) y Isis te dice cuánto recibes, cuánto pagas y cuánto te queda.</p>
+      <label class="field">
+        <span>PCN · válidos esta semana</span>
+        <input id="money-pcn" type="number" min="0" placeholder="0" autocomplete="off" />
+      </label>
+      <label class="field">
+        <span>NIDEC · válidos esta semana</span>
+        <input id="money-nidec" type="number" min="0" placeholder="0" autocomplete="off" />
+      </label>
+      <label class="field">
+        <span>Daltile · válidos esta semana</span>
+        <input id="money-daltile" type="number" min="0" placeholder="0" autocomplete="off" />
+      </label>
+      <label class="field">
+        <span>Incentivo extra esta semana ($) · opcional</span>
+        <input id="money-incentive" type="number" min="0" placeholder="0" autocomplete="off" />
+      </label>
+      <label class="field">
+        <span>Válidos este mes (para el bono mensual de $2,000 por cada 10) · opcional</span>
+        <input id="money-month" type="number" min="0" placeholder="0" autocomplete="off" />
+      </label>
+      <button id="btn-money" class="primary-btn" type="button">Calcular</button>
+      <div id="money-result" class="money-result">
+        <p class="muted">Pon los conteos y toca Calcular. También puedes decirme por voz: “llevo 4 de PCN”.</p>
+      </div>
     </section>
   </div>
 
