@@ -303,23 +303,66 @@ main { max-width: 640px; margin: 0 auto; padding: 8px 16px 32px; position: relat
   font: inherit; cursor: pointer; text-decoration: underline; padding: 0;
 }
 
-/* ---------------------------------------------------------- Chat (plegable) */
-/* Cabecera/toggle: título + vista previa de la última respuesta + flecha */
+/* ---------------------------------------------------------- Chat (plegable, estilo del mockup JARVIS) */
+/* La tarjeta del chat: como en el mockup — rectángulo de bordes
+   redondeados, fondo oscuro, borde fino con un brillo cian sutil. Sin
+   las esquinas HUD del resto de tarjetas. */
+#chat-card {
+  border-radius: 16px;
+  background: rgba(3, 12, 24, 0.92);
+  border: 1px solid rgba(0, 212, 255, 0.28);
+  box-shadow: 0 0 24px rgba(0, 212, 255, 0.10), inset 0 0 24px rgba(0, 212, 255, 0.03);
+  padding: 14px 16px;
+  overflow: hidden;
+}
+#chat-card::before, #chat-card::after { content: none; }
+#chat-card:hover {
+  border-color: rgba(0, 212, 255, 0.45);
+  box-shadow: 0 0 28px rgba(0, 212, 255, 0.16), inset 0 0 24px rgba(0, 212, 255, 0.04);
+}
+/* La tarjeta entera es el botón: tocarla expande o colapsa. Colapsada
+   se ve como en el mockup: "→" + la última respuesta + "‹", y abajo a
+   la derecha la pista "Toca para expandir la conversación". Expandida
+   solo se ve el título "Conversación" con la flecha hacia abajo. */
 .chat-toggle {
-  display: flex; align-items: center; gap: 10px; width: 100%;
-  background: none; border: none; cursor: pointer; padding: 2px 0 0;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; width: 100%;
+  background: none; border: none; cursor: pointer; padding: 0;
+  text-align: left;
+}
+.chat-toggle-title {
+  flex: 1 1 auto; min-width: 0;
   color: var(--neon-bright); font-family: var(--font-display);
   font-size: 0.92rem; font-weight: 700; letter-spacing: 2.5px; text-transform: uppercase;
-  text-shadow: 0 0 12px rgba(0, 212, 255, 0.5); text-align: left;
+  text-shadow: 0 0 12px rgba(0, 212, 255, 0.5);
 }
-.chat-toggle-title { flex-shrink: 0; }
+.chat-reply-arrow {
+  flex: 0 0 auto;
+  color: var(--neon); font-size: 1.05rem; line-height: 1;
+  text-shadow: 0 0 10px var(--neon-glow);
+}
 .chat-preview {
-  flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
-  font-family: var(--font-body); font-size: 0.9rem; font-weight: 400; letter-spacing: 0.3px; text-transform: none;
-  color: var(--muted); text-shadow: none;
+  flex: 1 1 0; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+  font-family: var(--font-body); font-size: 0.95rem; font-weight: 400; letter-spacing: 0.3px;
+  color: var(--text);
 }
-.chat-arrow { flex-shrink: 0; font-size: 0.9rem; transition: transform 0.25s ease; }
-.chat-card.collapsed .chat-arrow { transform: rotate(-90deg); }
+.chat-arrow {
+  flex: 0 0 auto;
+  color: var(--neon); font-size: 1.05rem; line-height: 1;
+  text-shadow: 0 0 10px var(--neon-glow);
+  transition: transform 0.25s ease;
+}
+.chat-expand-hint {
+  flex: 1 1 100%;
+  text-align: right;
+  font-family: var(--font-body); font-size: 0.8rem; letter-spacing: 0.5px;
+  color: var(--muted);
+}
+/* Colapsada: sin título. Expandida: sin flecha "→" ni pista, y la
+   flecha "‹" gira a "⌄" (tocar colapsa). */
+.chat-card.collapsed .chat-toggle-title { display: none; }
+.chat-card:not(.collapsed) .chat-reply-arrow,
+.chat-card:not(.collapsed) .chat-expand-hint { display: none; }
+.chat-card:not(.collapsed) .chat-arrow { transform: rotate(-90deg); }
 .chat-body { margin-top: 10px; }
 .chat {
   display: flex; flex-direction: column; gap: 10px;
@@ -329,7 +372,7 @@ main { max-width: 640px; margin: 0 auto; padding: 8px 16px 32px; position: relat
 .chat::-webkit-scrollbar { width: 5px; }
 .chat::-webkit-scrollbar-thumb { background: rgba(0, 212, 255, 0.45); border-radius: 3px; }
 .bubble {
-  max-width: 88%; padding: 10px 14px; border-radius: 4px;
+  max-width: 88%; padding: 10px 14px; border-radius: 14px;
   line-height: 1.5; white-space: pre-wrap; word-break: break-word;
   transition: box-shadow 0.3s ease;
 }
@@ -338,6 +381,7 @@ main { max-width: 640px; margin: 0 auto; padding: 8px 16px 32px; position: relat
   background: linear-gradient(135deg, rgba(0, 144, 255, 0.35), rgba(0, 212, 255, 0.18));
   border: 1px solid rgba(0, 212, 255, 0.45);
   border-right: 2px solid var(--neon);
+  border-radius: 14px 14px 4px 14px;
   box-shadow: 0 0 14px rgba(0, 212, 255, 0.12);
 }
 .bubble.isis {
@@ -345,6 +389,7 @@ main { max-width: 640px; margin: 0 auto; padding: 8px 16px 32px; position: relat
   background: rgba(2, 26, 48, 0.85);
   border: 1px solid rgba(0, 212, 255, 0.28);
   border-left: 2px solid var(--neon);
+  border-radius: 14px 14px 14px 4px;
   box-shadow: 0 0 14px rgba(0, 212, 255, 0.1);
 }
 .bubble.error { border-color: var(--danger); color: #ffc9d1; box-shadow: 0 0 14px rgba(255, 84, 112, 0.2); }
