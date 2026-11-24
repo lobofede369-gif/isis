@@ -13,6 +13,8 @@
   const LS_TEXTBEE_DEVICE = "isis_textbee_device";
   const LS_FACTS = "isis_facts";
   const LS_CONTACTS = "isis_contacts";
+  const LS_VOICE = "isis_voice";
+  const LS_WAKE = "isis_wake_enabled";
 
   const $ = (id) => document.getElementById(id);
   const orb = $("orb");
@@ -255,32 +257,137 @@
   let recognition = null;
   let listening = false;
 
+  // --- selección de voz: la más natural en español que tenga el teléfono.
+  // Orden de preferencia: es-MX, es-US, es-419, es-ES; dentro de cada
+  // idioma, primero las voces "Natural"/"Neural" de Google. En Android las
+  // voces llegan tarde, por eso se escucha "voiceschanged" y se vuelve a
+  // leer la lista cuando están listas.
+  let spanishVoices = [];
+  let selectedVoice = null;
+
+  function voiceId(v) {
+    return (v.voiceURI || "") + "|" + (v.name || "") + "|" + (v.lang || "");
+  }
+  function scoreVoice(v) {
+    const lang = (v.lang || "").toLowerCase();
+    const name = (v.name || "").toLowerCase();
+    let score = 0;
+    if (lang === "es-mx" || lang.startsWith("es-mx")) score += 100;
+    else if (lang === "es-us" || lang.startsWith("es-us")) score += 80;
+    else if (lang === "es-419" || lang.startsWith("es-419")) score += 70;
+    else if (lang === "es-es" || lang.startsWith("es-es")) score += 60;
+    else if (lang.startsWith("es")) score += 40;
+    if (name.includes("natural") || name.includes("neural")) score += 25;
+    if (name.includes("google")) score += 20;
+    return score;
+  }
+  function refreshVoices() {
+    if (!("speechSynthesis" in window)) return;
+    const all = window.speechSynthesis.getVoices();
+    spanishVoices = all
+      .filter((v) => (v.lang || "").toLowerCase().startsWith("es"))
+      .sort((a, b) => scoreVoice(b) - scoreVoice(a));
+    const saved = (localStorage.getItem(LS_VOICE) || "").trim();
+    selectedVoice =
+      spanishVoices.find((v) => voiceId(v) === saved) ||
+      spanishVoices[0] ||
+      null;
+    populateVoiceSelect();
+  }
   function pickSpanishVoice() {
-    const voices = window.speechSynthesis
-      ? window.speechSynthesis.getVoices()
-      : [];
-    return (
-      voices.find((v) => v.lang && v.lang.toLowerCase().startsWith("es-mx")) ||
-      voices.find((v) => v.lang && v.lang.toLowerCase().startsWith("es")) ||
-      null
-    );
+    return selectedVoice;
+  }
+  function populateVoiceSelect() {
+    const sel = $("voice-select");
+    const state = $("voice-state");
+    if (!sel) return;
+    sel.innerHTML = "";
+    if (!("speechSynthesis" in window)) {
+      if (state) state.textContent = "Este navegador no tiene voces.";
+      sel.disabled = true;
+      return;
+    }
+    if (spanishVoices.length === 0) {
+      if (state) state.textContent = "Todavía no hay voces en español cargadas…";
+      sel.disabled = true;
+      return;
+    }
+    spanishVoices.forEach((v) => {
+      const opt = document.createElement("option");
+      opt.value = voiceId(v);
+      opt.textContent = v.name + " (" + v.lang + ")";
+      sel.appendChild(opt);
+    });
+    if (selectedVoice) sel.value = voiceId(selectedVoice);
+    if (state) {
+      state.textContent =
+        spanishVoices.length + " voces en español disponibles.";
+    }
+    sel.disabled = false;
+  }
+
+  // --- hablar: se respeta la puntuación. Cada respuesta se divide en
+  // oraciones (. ! ?) y se habla una por una, con una pausa corta entre
+  // ellas, para que las comas y los puntos suenen naturales. La voz es la
+  // elegida en Configuración, con tono 1.1 y velocidad 0.95 para que suene
+  // más femenina y natural, sin atropellarse.
+  let speakQueue = [];
+  let speakGen = 0;
+  let speakingNow = false;
+  let thinkingNow = false;
+  function splitSentences(text) {
+    const clean = String(text || "").replace(/\s+/g, " ").trim();
+    if (!clean) return [];
+    const parts = clean.match(/[^.!?…]+[.!?…]["»”')]*|[^.!?…]+$/g) || [];
+    return parts.map((s) => s.trim()).filter(Boolean);
   }
   function speak(text) {
     if (!("speechSynthesis" in window)) return;
+    const sentences = splitSentences(text);
+    if (sentences.length === 0) return;
     window.speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(text);
+    speakGen += 1;
+    const gen = speakGen;
+    speakQueue = sentences;
+    speakNext(gen);
+  }
+  function speakNext(gen) {
+    if (gen !== speakGen) return;
+    if (speakQueue.length === 0) {
+      speakingNow = false;
+      orb.classList.remove("speaking");
+      orb.classList.remove("listening");
+      setOrbStatus(idleStatus());
+      setTimeout(maybeStartWake, 800);
+      return;
+    }
+    const sentence = speakQueue.shift();
+    const u = new SpeechSynthesisUtterance(sentence);
     u.lang = "es-MX";
     const voice = pickSpanishVoice();
-    if (voice) u.voice = voice;
-    u.onstart = () => orb.classList.add("speaking");
-    u.onend = () => {
-      orb.classList.remove("speaking");
-      setOrbStatus("Toca el círculo para hablar");
+    if (voice) {
+      u.voice = voice;
+      u.lang = voice.lang || "es-MX";
+    }
+    u.pitch = 1.1;
+    u.rate = 0.95;
+    u.onstart = () => {
+      speakingNow = true;
+      orb.classList.add("speaking");
+      orb.classList.remove("listening");
     };
+    u.onend = () => setTimeout(() => speakNext(gen), 200);
+    u.onerror = () => setTimeout(() => speakNext(gen), 200);
     window.speechSynthesis.speak(u);
   }
   function setOrbStatus(text) {
     orbStatus.textContent = text;
+  }
+  // Estado "en reposo" del orbe: depende de si la escucha continua está prendida.
+  function idleStatus() {
+    return wakeArmed && wakeEnabled
+      ? "Di “Isis” para activarme"
+      : "Toca el círculo para hablar";
   }
 
   if (!SpeechRecognition) {
@@ -303,10 +410,12 @@
     };
     recognition.onend = () => {
       if (listening) stopListening();
+      setTimeout(maybeStartWake, 1500);
     };
   }
   function startListening() {
     if (!recognition) return;
+    stopWake(); // no dos reconocimientos a la vez: la escucha continua se pausa
     try {
       listening = true;
       orb.classList.add("listening");
@@ -325,8 +434,205 @@
   }
   orb.addEventListener("click", () => {
     if (listening) stopListening();
-    else startListening();
+    else {
+      startListening();
+      armWake(); // el primer toque es el gesto que enciende el micrófono
+    }
   });
+
+  // ---------------------------------------------------------- escucha continua ("Isis")
+  // Solo funciona mientras la página está abierta y activa: el navegador
+  // no deja arrancar el micrófono sin un gesto del usuario, así que la
+  // escucha continua se prende con el primer toque al orbe (o con el
+  // botón "Activar escucha") y de ahí sigue sola, reiniciándose sola
+  // cuando Chrome la detiene tras un silencio o un resultado.
+  let wakeEnabled = (localStorage.getItem(LS_WAKE) || "1") === "1";
+  let wakeArmed = false;
+  let wakeRunning = false;
+  let wakeRecognition = null;
+  let wakeRestartTimer = null;
+  let wakeIntentionalStop = false;
+  let awaitingCommand = false;
+  let awaitingTimer = null;
+
+  const wakeRow = $("wake-row");
+  const wakeToggle = $("wake-toggle");
+  const wakeBtn = $("btn-wake");
+
+  function updateWakeUI() {
+    if (wakeRow) wakeRow.hidden = !SpeechRecognition;
+    if (wakeToggle) wakeToggle.checked = wakeEnabled;
+    if (wakeBtn) {
+      wakeBtn.hidden = !wakeEnabled || wakeArmed || !SpeechRecognition;
+    }
+  }
+
+  function armWake() {
+    if (!wakeEnabled || !SpeechRecognition) return;
+    wakeArmed = true;
+    updateWakeUI();
+  }
+
+  function setAwaitingCommand(on) {
+    awaitingCommand = on;
+    if (awaitingTimer) {
+      clearTimeout(awaitingTimer);
+      awaitingTimer = null;
+    }
+    if (on) {
+      awaitingTimer = setTimeout(() => {
+        awaitingCommand = false;
+        orb.classList.remove("listening");
+        setOrbStatus(idleStatus());
+      }, 10000);
+    }
+  }
+
+  function createWakeRecognition() {
+    const r = new SpeechRecognition();
+    r.lang = "es-MX";
+    r.continuous = true;
+    r.interimResults = true;
+    r.maxAlternatives = 1;
+    r.onresult = (event) => {
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const res = event.results[i];
+        const transcript = (res[0] && res[0].transcript) || "";
+        if (!transcript.trim()) continue;
+        if (/\bisis\b/i.test(transcript)) {
+          handleWakeDetected(transcript);
+          return;
+        }
+        if (awaitingCommand && res.isFinal) {
+          setAwaitingCommand(false);
+          stopWake();
+          orb.classList.add("listening");
+          setOrbStatus("Escuchando…");
+          sendMessage(transcript.trim());
+          return;
+        }
+      }
+    };
+    r.onend = () => {
+      wakeRunning = false;
+      if (wakeIntentionalStop) {
+        wakeIntentionalStop = false;
+        return;
+      }
+      scheduleWakeRestart();
+    };
+    r.onerror = (event) => {
+      wakeRunning = false;
+      if (
+        event.error === "not-allowed" ||
+        event.error === "service-not-allowed"
+      ) {
+        wakeArmed = false;
+        setOrbStatus("El micrófono está bloqueado: toca el círculo para hablar");
+        updateWakeUI();
+        return;
+      }
+      scheduleWakeRestart();
+    };
+    return r;
+  }
+
+  function handleWakeDetected(transcript) {
+    const idx = transcript.search(/\bisis\b/i);
+    const after = transcript
+      .slice(idx + 4)
+      .replace(/^[\s,:\-–—]+/, "")
+      .trim();
+    setAwaitingCommand(false);
+    if (after) {
+      // "Isis, ¿cómo va Orlando?" → se procesa todo junto.
+      stopWake();
+      orb.classList.add("listening");
+      setOrbStatus("Escuchando…");
+      sendMessage(after);
+    } else {
+      // Solo "Isis": espera la siguiente frase como comando.
+      setAwaitingCommand(true);
+      orb.classList.add("listening");
+      setOrbStatus("Te escucho… dime");
+    }
+  }
+
+  function startWake() {
+    if (!wakeEnabled || !wakeArmed || wakeRunning) return;
+    if (!SpeechRecognition) return;
+    if (!wakeRecognition) wakeRecognition = createWakeRecognition();
+    try {
+      wakeRunning = true;
+      wakeIntentionalStop = false;
+      wakeRecognition.start();
+      setOrbStatus(
+        awaitingCommand ? "Te escucho… dime" : "Di “Isis” para activarme"
+      );
+      updateWakeUI();
+    } catch (e) {
+      wakeRunning = false;
+    }
+  }
+
+  function stopWake() {
+    if (wakeRestartTimer) {
+      clearTimeout(wakeRestartTimer);
+      wakeRestartTimer = null;
+    }
+    if (wakeRecognition && wakeRunning) {
+      wakeIntentionalStop = true;
+      try {
+        wakeRecognition.stop();
+      } catch (e) {}
+    }
+    wakeRunning = false;
+  }
+
+  function scheduleWakeRestart() {
+    if (!wakeEnabled || !wakeArmed) return;
+    if (document.hidden) return;
+    if (wakeRestartTimer) clearTimeout(wakeRestartTimer);
+    wakeRestartTimer = setTimeout(() => {
+      wakeRestartTimer = null;
+      maybeStartWake();
+    }, 400);
+  }
+
+  function maybeStartWake() {
+    if (!wakeEnabled || !wakeArmed) return;
+    if (wakeRunning || listening) return;
+    if (thinkingNow || speakingNow) return;
+    if (window.speechSynthesis && window.speechSynthesis.speaking) return;
+    if (document.hidden) return;
+    startWake();
+  }
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) stopWake();
+    else maybeStartWake();
+  });
+
+  if (wakeToggle) {
+    wakeToggle.addEventListener("change", () => {
+      wakeEnabled = wakeToggle.checked;
+      localStorage.setItem(LS_WAKE, wakeEnabled ? "1" : "0");
+      if (!wakeEnabled) {
+        wakeArmed = false;
+        setAwaitingCommand(false);
+        stopWake();
+        orb.classList.remove("listening");
+        setOrbStatus("Toca el círculo para hablar");
+      }
+      updateWakeUI();
+    });
+  }
+  if (wakeBtn) {
+    wakeBtn.addEventListener("click", () => {
+      armWake();
+      maybeStartWake();
+    });
+  }
 
   // ---------------------------------------------------------- chat
   function addBubble(who, text, tag) {
@@ -459,7 +765,7 @@
       addBubble("isis", msg, "SMS");
       speak(msg);
     }
-    setOrbStatus("Toca el círculo para hablar");
+    setOrbStatus(idleStatus());
   }
 
   async function handleSendWhatsapp(action) {
@@ -507,7 +813,7 @@
       addBubble("isis", msg, "WhatsApp");
       speak(msg);
     }
-    setOrbStatus("Toca el círculo para hablar");
+    setOrbStatus(idleStatus());
   }
 
   async function sendMessage(text) {
@@ -517,8 +823,10 @@
     // Clima: siempre por /api/weather, nunca culpar a la clave de Claude.
     if (isWeatherQuestion(text)) {
       await handleWeather();
+      setTimeout(maybeStartWake, 1200);
       return;
     }
+    thinkingNow = true;
 
     const { fableaiKey, n8nKey } = getKeys();
     const facts = loadFacts();
@@ -571,7 +879,10 @@
       addBubble("isis", msg, "Isis");
       speak(msg);
     }
-    setOrbStatus("Toca el círculo para hablar");
+    thinkingNow = false;
+    orb.classList.remove("listening");
+    setOrbStatus(idleStatus());
+    setTimeout(maybeStartWake, 1200);
   }
 
   chatForm.addEventListener("submit", (e) => {
@@ -693,11 +1004,38 @@
     loadOrlando();
   });
 
+  // --- selector de voz (Configuración): la lista se llena cuando el
+  // teléfono carga las voces (voiceschanged). Al elegir, se guarda.
+  const voiceSelect = $("voice-select");
+  if (voiceSelect) {
+    voiceSelect.addEventListener("change", () => {
+      const chosen =
+        spanishVoices.find((v) => voiceId(v) === voiceSelect.value) || null;
+      if (chosen) {
+        selectedVoice = chosen;
+        localStorage.setItem(LS_VOICE, voiceId(chosen));
+      }
+    });
+  }
+  const testVoiceBtn = $("btn-test-voice");
+  if (testVoiceBtn) {
+    testVoiceBtn.addEventListener("click", () => {
+      stopWake(); // que no se escuche a sí misma y se active sola
+      speak("Hola, soy Isis. ¿Cómo va tu día? Me da gusto hablar contigo.");
+    });
+  }
+
   // ---------------------------------------------------------- inicio
   refreshKeyUI();
   renderFacts();
   renderContacts();
   loadOrlando();
+  // Las voces del teléfono llegan tarde en Android: se escucha el evento.
+  if ("speechSynthesis" in window) {
+    window.speechSynthesis.addEventListener("voiceschanged", refreshVoices);
+  }
+  refreshVoices();
+  updateWakeUI();
   addBubble(
     "isis",
     "Hola, soy Isis. Tócame el círculo y háblame, o escríbeme abajo. Si me preguntas por Orlando, lo reviso; si me preguntas por el clima, lo consulto en vivo; y si me pides que le escriba a alguien, lo mando por SMS desde tu número (o por WhatsApp si me lo pides así).",

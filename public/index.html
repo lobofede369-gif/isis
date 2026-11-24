@@ -35,6 +35,15 @@
       </button>
       <p id="orb-status" class="orb-status">Toca el círculo para hablar</p>
       <p id="orb-mood" class="orb-mood" hidden></p>
+      <div id="wake-row" class="wake-row">
+        <label class="wake-toggle">
+          <input type="checkbox" id="wake-toggle" checked />
+          <span class="wake-switch"></span>
+          <span>Escucha continua</span>
+        </label>
+        <button id="btn-wake" class="small-btn" type="button" hidden>Activar escucha</button>
+      </div>
+      <p class="hint wake-hint">Solo escucha mientras esta página está abierta. Di “Isis” para activarme; se enciende con tu primer toque y sigue sola.</p>
       <p id="voice-note" class="voice-note" hidden></p>
     </section>
 
@@ -132,6 +141,14 @@
         <input id="cfg-textbee-device" type="text" placeholder="Pégalo aquí… (puedes dejarlo vacío)" autocomplete="off" />
         <span id="cfg-textbee-device-state" class="field-state">Sin guardar (opcional)</span>
       </label>
+      <div class="field">
+        <span>Voz de Isis</span>
+        <div class="voice-row">
+          <select id="voice-select" aria-label="Voz de Isis"></select>
+          <button id="btn-test-voice" class="small-btn" type="button">Probar voz</button>
+        </div>
+        <span id="voice-state" class="field-state">Buscando voces en español…</span>
+      </div>
       <div class="config-actions">
         <button id="btn-save-config" class="primary-btn">Guardar claves</button>
         <button id="btn-clear-config" class="small-btn danger">Borrar claves</button>
