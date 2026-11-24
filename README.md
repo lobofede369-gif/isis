@@ -26,6 +26,16 @@ anillo luminoso gira alrededor de la imagen (más rápido al pensar o
 hablar), el brillo cambia de color e intensidad según su ánimo (el
 sistema de ánimo ya existía y se reutiliza) y la imagen pulsa al ritmo
 de la voz mientras habla. Nada se eliminó: todo lo que antes estaba en
+la pantalla principal se reubicó dentro del menú. Los módulos son 12:
+**Configuración**, **Voz de Isis**, **Memoria**, **Contactos**,
+**Orlando · Bot PCN**, **Análisis**, **Escanear**, **Sistemas**,
+**Música**, **Recordatorios**, **Noticias** y **Dinero**.
+
+El orbe refleja el estado de Isis aunque la imagen sea estática: un
+anillo luminoso gira alrededor de la imagen (más rápido al pensar o
+hablar), el brillo cambia de color e intensidad según su ánimo (el
+sistema de ánimo ya existía y se reutiliza) y la imagen pulsa al ritmo
+de la voz mientras habla. Nada se eliminó: todo lo que antes estaba en
 la pantalla principal se reubicó dentro del menú.
 
 ## Qué hace
@@ -40,6 +50,13 @@ la pantalla principal se reubicó dentro del menú.
   (Web Speech API), así nunca se queda muda. En el menú ☰ → **Voz de
   Isis** se elige su voz de Kokoro: solo hay 3 en
   español — Dora (femenina, por defecto), Alex y Santa (masculinas) —
+
+- **Texto con formato**: Claude responde con markdown y la app lo
+  muestra como debe verse — `**negritas**` en negritas, `*cursivas*`
+  en cursivas, sin backticks ni `##` — en el chat y en todos los
+  paneles (El Mitote, análisis, decisiones, visión, sistemas,
+  noticias). Y cuando Isis habla, los marcadores se quitan todos para
+  que nunca lea un asterisco en voz alta.
   con botón "Probar voz"; y también se elige la voz del teléfono (lista
   de voces en español del teléfono: por defecto toma la más femenina y
   natural disponible, en orden es-MX, es-US, es-419, es-ES, prefiriendo
@@ -106,6 +123,54 @@ la pantalla principal se reubicó dentro del menú.
     con lo que Isis sabe de Santiago (hechos y resumen) y devuelve un
     veredicto estructurado y corto: pros, contras y recomendación
     (`POST /api/decide`). Sin muros de texto.
+  - **Música — Spotify** ("Isis, pon música" / "pon [canción o artista]"
+    / "pausa la música" / "siguiente canción" / menú ☰ → Música): Isis
+    controla la reproducción de Spotify de Santiago con la API Web de
+    Spotify (flujo de código de autorización; el token y el refresh
+    token viven solo en el navegador, como las demás claves, y se mandan
+    por petición; el servidor solo hace de puente y nunca los guarda).
+    El módulo tiene botón para conectar Spotify, buscador y controles
+    (poner, pausar, siguiente, qué suena). **Spotify exige cuenta
+    Premium para controlar la reproducción**: sin Premium la API
+    responde 403 y Isis lo dice claro en español ("Spotify exige Premium
+    para controlar la reproducción"), sin inventar que funciona. Para
+    conectar hay que crear una app en developer.spotify.com/dashboard
+    (Redirect URI = la dirección de Isis) y pegar el Client ID y el
+    Client Secret en Configuración.
+  - **Recordatorios y temporizadores** ("Isis, recuérdame [X] a las
+    [hora]" / "recuérdame [X] en [N] minutos" / "pon un temporizador de
+    [N] minutos" / "¿qué me tienes que recordar?" / menú ☰ →
+    Recordatorios): Isis los programa con temporizadores en la app y
+    cuando llega la hora suena un aviso (sonido + voz + tarjeta visible
+    en la pantalla principal) y se marca como cumplido. Se guardan en el
+    navegador y se reprograman al abrir la app. **Funcionan con la app
+    abierta**: en Render Free Isis se duerme y no hay servicio en
+    segundo plano; un recordatorio que vence con la app cerrada suena
+    cuando la vuelvas a abrir ("Te debía recordar…").
+  - **Resumen de noticias** ("Isis, ¿qué hay de nuevo?" / "dame las
+    noticias" / menú ☰ → Noticias): `POST /api/news` trae las noticias
+    del día de Google News RSS (gratis, sin clave) y Claude (vía
+    FableAI, como el chat) las resume en español (máx. 5 noticias, una
+    línea cada una). Isis lo dice en voz alta y lo muestra en el módulo.
+    Si el feed falla, mensaje claro en español; si Claude falla, llegan
+    los titulares tal cual.
+  - **Control de dinero** ("Isis, ¿cuánto llevo ganado?" / "¿cuánto gano
+    esta semana?" / "llevo [N] de PCN" / menú ☰ → Dinero): Isis conoce
+    las comisiones confirmadas de Santiago y calcula cuánto RECIBE,
+    cuánto PAGA y cuánto le QUEDA esta semana, por voz y en pantalla.
+    Los conteos de la semana se guardan en el navegador para no
+    repetirlos. **Números** (captura 23 nov 2026): RECIBE — PCN $900
+    (1–3) / $1,000 (4) / $1,200 (5–6) / $1,400 (7); NIDEC $1,500 fijo;
+    DALTILE $1,000 (1–2) / $1,100 (3) / $1,150 (4) / $1,250 (5–6) /
+    $1,400 (8), el de 7 sin confirmar (se calcula con $1,250 y se avisa);
+    bono mensual $2,000 por cada 10 válidos. PAGA a reclutadores — PCN
+    $540 / $600 / $720 / $840; NIDEC $900. La tasa del nivel aplica a
+    TODOS los válidos de esa empresa/semana; solo cuentan los que llegan
+    al día 2; semana sáb–vie, pago viernes. **Nunca inventa números**:
+    si no le ha dicho los conteos, Isis pregunta cuántos lleva. Estos
+    números son solo de Isis: el bot de Orlando enseña solo los de
+    reclutadores y aquí no se tocan. Verificación: 4 PCN + $300 de
+    incentivo → recibe $4,000, paga $2,700, le quedan $1,300.
 - **Aprendizaje**: "Lo que Isis ha aprendido" guarda hechos en el navegador;
   se le puede enseñar y hacer que olvide cualquiera. Isis también aprende
   sola de la conversación: cuando aparece algo que vale la pena recordar
@@ -137,9 +202,15 @@ la pantalla principal se reubicó dentro del menú.
   del personal, reasignar/fusionar/dividir cuentas y ver el historial de
   cortes. Lee primero el catálogo (mesas y productos) y pregunta si algo
   es ambiguo; nunca inventa montos ni IDs. Lo sensible o destructivo
-  exige confirmación por voz en dos pasos: Isis repite lo que va a hacer
-  y solo lo ejecuta cuando Santiago dice que sí. Hay dos cosas que nunca
-  hace por voz: cambiar la contraseña del propietario y la recuperación
+  exige confirmación en dos pasos: Isis repite lo que va a hacer y solo
+  lo ejecuta cuando Santiago dice que sí (por voz) o toca "✓ Sí, hazlo"
+  (por botón). Si la acción llega directa sin confirmar, el servidor
+  responde 403 con `needsConfirmation` y el cliente arma la
+  confirmación pendiente en ese momento, así que el "sí" siempre llega
+  a ejecutarse con `confirmed: true` y nunca se repite la pregunta en
+  bucle. Si Claude pide otra vez la misma acción con los mismos datos
+  justo después de ejecutarla, no se re-ejecuta ni se vuelve a preguntar.
+  Hay dos cosas que nunca hace por voz: cambiar la contraseña del propietario y la recuperación
   de emergencia (se hacen a mano). La pre-cuenta y el ticket se generan
   en PDF y se abren para imprimirlos (la impresión física no existe en
   el servidor del restaurante). Ante un error transitorio del
@@ -269,11 +340,18 @@ Dentro de la app, en el menú ☰ → **Configuración**, Santiago pega una sola
   Configuración. Plan gratis: 300 SMS/mes, 50/día, 1 dispositivo, sin
   tarjeta. El teléfono debe estar prendido, con señal y con TextBee activo
   cuando se mande el SMS; si está apagado o sin internet, el SMS no sale.
+- **Client ID y Client Secret de Spotify** (para poner música): se crean
+  en developer.spotify.com/dashboard → Create app (nombre y descripción
+  libres) → en **Redirect URIs** pon la dirección de Isis (la misma que
+  ves en el navegador, por ejemplo `https://isis-sftw.onrender.com/`) →
+  copia el Client ID y el Client Secret en Configuración. Spotify exige
+  cuenta **Premium** para controlar la reproducción desde Isis; sin
+  Premium, Isis lo dice claro y no finge que funciona.
 
 Las claves viven **solo en el localStorage del navegador**. Nunca se
 guardan en el servidor, nunca van a ningún archivo del repo y nunca se
 muestran en pantalla (solo se ve "Guardada"). El servidor las recibe en
-cada llamada y las usa solo para hablar con FableAI / n8n.
+cada llamada y las usa solo para hablar con FableAI / n8n / Spotify.
 
 ## Endpoints
 
@@ -287,6 +365,15 @@ cada llamada y las usa solo para hablar con FableAI / n8n.
 | POST | `/api/vision` | `{ image (data URL JPEG), question, fableaiKey }` — Claude analiza una foto de la cámara (escaneo JARVIS) |
 | POST | `/api/systems` | `{ n8nKey, battery? }` — diagnóstico consolidado: Isis, Orlando, El Mitote, teléfono; devuelve veredicto y alertas |
 | POST | `/api/decide` | `{ decision, fableaiKey, facts[], summary }` — análisis de una decisión: veredicto, pros, contras, recomendación |
+| POST | `/api/news` | `{ fableaiKey }` — resumen del día: Google News RSS (sin clave) + Claude; máx. 5 noticias, una línea cada una; si Claude falla, los titulares tal cual (`claudeLive: false`) |
+| POST | `/api/spotify/auth-url` | `{ clientId, redirectUri }` — URL de autorización OAuth de Spotify |
+| POST | `/api/spotify/token` | `{ code, clientId, clientSecret, redirectUri }` — código por tokens |
+| POST | `/api/spotify/refresh` | `{ refreshToken, clientId, clientSecret }` — renueva el token de acceso |
+| POST | `/api/spotify/search` | `{ accessToken, q }` — busca canciones (máx. 5) |
+| POST | `/api/spotify/play` | `{ accessToken, uri? }` — reproduce (o reanuda); sin Premium responde 403 con `premiumRequired` |
+| POST | `/api/spotify/pause` | `{ accessToken }` — pausa |
+| POST | `/api/spotify/next` | `{ accessToken }` — siguiente canción |
+| POST | `/api/spotify/status` | `{ accessToken }` — qué está sonando |
 | POST | `/api/send-whatsapp` | `{ to, message, whatsappToken }` — manda un texto por WhatsApp desde el bot |
 | POST | `/api/send-sms` | `{ to, message, textbeeKey, deviceId? }` — manda un SMS desde su número (TextBee) |
 | POST | `/api/send-sms` | `{ to, message, textbeeKey }` — manda un SMS por TextBee desde tu número |
