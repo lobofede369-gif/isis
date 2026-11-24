@@ -207,9 +207,14 @@
         <span id="cfg-textbee-device-state" class="field-state">Sin guardar (opcional)</span>
       </label>
       <label class="field">
-        <span>Clave de Google Cloud (voz natural)</span>
-        <input id="cfg-google" type="password" placeholder="Pégala aquí…" autocomplete="off" />
-        <span id="cfg-google-state" class="field-state">Sin guardar</span>
+        <span>Clave de Azure (voz natural)</span>
+        <input id="cfg-azure" type="password" placeholder="Pégala aquí…" autocomplete="off" />
+        <span id="cfg-azure-state" class="field-state">Sin guardar</span>
+      </label>
+      <label class="field">
+        <span>Región de Azure (donde quedó tu recurso de Speech)</span>
+        <input id="cfg-azure-region" type="text" placeholder="eastus" autocomplete="off" />
+        <span id="cfg-azure-region-state" class="field-state">eastus (por defecto)</span>
       </label>
       <div class="field">
         <span>Voz de Isis</span>
@@ -219,9 +224,9 @@
         </div>
         <span id="voice-state" class="field-state">Buscando voces en español…</span>
         <div class="voice-row">
-          <select id="google-voice-select" aria-label="Voz de Google"></select>
+          <select id="azure-voice-select" aria-label="Voz de Azure"></select>
         </div>
-        <span id="google-voice-state" class="field-state">Sin clave de Google.</span>
+        <span id="azure-voice-state" class="field-state">Sin clave de Azure.</span>
       </div>
       <div class="config-actions">
         <button id="btn-save-config" class="primary-btn">Guardar claves</button>
@@ -233,7 +238,7 @@
         La clave de API de n8n se crea en n8n → Settings → n8n API.
         El token de WhatsApp se consigue en Meta for Developers → tu app «PCN Bot» → WhatsApp → API Setup → Token de acceso.
         La clave de TextBee y el ID del dispositivo se consiguen en textbee.dev: crea una cuenta, instala la app en tu teléfono, agrega el dispositivo escaneando el QR y crea una API key. Sin el ID, Isis usa tu dispositivo por defecto.
-        La clave de Google se crea en console.cloud.google.com: crea un proyecto, activa la facturación con tarjeta (no se cobra dentro del límite gratis), habilita la API Cloud Text-to-Speech y crea una clave API restringida a esa API. Plan gratis: ~1 millón de caracteres al mes (Neural2/WaveNet), 4 millones (Standard).
+        La clave de Azure y su región se consiguen en portal.azure.com: crea un recurso "Speech" en el plan gratis (Free F0), copia la clave y la región del recurso. Plan gratis: 500,000 caracteres al mes de voces neurales (~11 horas), con límite de 20 peticiones por minuto.
       </p>
     </section>
   </main>
