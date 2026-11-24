@@ -41,7 +41,18 @@
   const factsList = $("facts-list");
   const factForm = $("fact-form");
   const factInput = $("fact-input");
-  const configSection = $("config");
+  const drawer = $("drawer");
+  const drawerBackdrop = $("drawer-backdrop");
+  const panelsWrap = $("panels");
+  const panelTitle = $("panel-title");
+  const PANELS = [
+    ["panel-config", "Configuración"],
+    ["panel-voice", "Voz de Isis"],
+    ["panel-memory", "Memoria"],
+    ["panel-contacts", "Contactos"],
+    ["panel-orlando", "Orlando · Bot PCN"],
+    ["panel-analyze", "Análisis"],
+  ];
 
   // ---------------------------------------------------------- claves
   function getKeys() {
@@ -649,7 +660,7 @@
       } else if (kokoroState === "idle" && kokoroDownloadHint) {
         status.hidden = false;
         status.textContent =
-          "La voz de Isis aún no está descargada — descárgala en Configuración.";
+          "La voz de Isis aún no está descargada — descárgala en el menú ☰, en Voz de Isis.";
       } else {
         status.hidden = true;
         status.textContent = "";
@@ -1890,15 +1901,76 @@
     }
   });
 
-  // ---------------------------------------------------------- config
-  function toggleConfig() {
-    configSection.hidden = !configSection.hidden;
-    if (!configSection.hidden) {
-      configSection.scrollIntoView({ behavior: "smooth" });
-    }
+  // ---------------------------------------------------------- menú hamburguesa y paneles
+  // La pantalla principal es solo orbe + estado + conversación colapsada
+  // + dock mínimo. TODO lo demás vive en el menú hamburguesa: elegir un
+  // módulo cierra el menú y abre ese módulo en pantalla completa; "Volver"
+  // (o la tecla Escape) lo cierra y vuelve a la pantalla principal.
+  function openDrawer() {
+    if (!drawer) return;
+    drawer.classList.add("open");
+    if (drawerBackdrop) drawerBackdrop.hidden = false;
   }
-  $("btn-config").addEventListener("click", toggleConfig);
-  $("banner-config").addEventListener("click", toggleConfig);
+  function closeDrawer() {
+    if (!drawer) return;
+    drawer.classList.remove("open");
+    if (drawerBackdrop) drawerBackdrop.hidden = true;
+  }
+  function openPanel(panelId) {
+    const found = PANELS.find((p) => p[0] === panelId);
+    if (!found || !panelsWrap) return;
+    closeDrawer();
+    PANELS.forEach(([id]) => {
+      const el = $(id);
+      if (el) el.hidden = id !== panelId;
+    });
+    if (panelTitle) panelTitle.textContent = found[1];
+    panelsWrap.hidden = false;
+    if (window.scrollTo) window.scrollTo(0, 0);
+  }
+  function closePanels() {
+    if (!panelsWrap) return;
+    panelsWrap.hidden = true;
+    PANELS.forEach(([id]) => {
+      const el = $(id);
+      if (el) el.hidden = true;
+    });
+  }
+  const menuBtn = $("btn-menu");
+  if (menuBtn) menuBtn.addEventListener("click", openDrawer);
+  const closeDrawerBtn = $("btn-close-drawer");
+  if (closeDrawerBtn) closeDrawerBtn.addEventListener("click", closeDrawer);
+  if (drawerBackdrop) drawerBackdrop.addEventListener("click", closeDrawer);
+  const backPanelBtn = $("btn-back-panel");
+  if (backPanelBtn) backPanelBtn.addEventListener("click", closePanels);
+  const MENU_ITEMS = [
+    ["menu-config", "panel-config"],
+    ["menu-voice", "panel-voice"],
+    ["menu-memory", "panel-memory"],
+    ["menu-contacts", "panel-contacts"],
+    ["menu-orlando", "panel-orlando"],
+    ["menu-analyze", "panel-analyze"],
+  ];
+  MENU_ITEMS.forEach(([menuId, panelId]) => {
+    const item = $(menuId);
+    if (item) {
+      item.addEventListener("click", () => openPanel(panelId));
+    }
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      closeDrawer();
+      closePanels();
+    }
+  });
+
+  // ---------------------------------------------------------- config
+  // Abrir Configuración = abrir su panel (cierra el menú si estaba abierto).
+  function toggleConfig() {
+    openPanel("panel-config");
+  }
+  const bannerConfigBtn = $("banner-config");
+  if (bannerConfigBtn) bannerConfigBtn.addEventListener("click", toggleConfig);
 
   $("btn-save-config").addEventListener("click", () => {
     const f = $("cfg-fableai").value.trim();
@@ -2011,32 +2083,10 @@
     });
   }
   setChatCollapsed(true);
-  // Dock estilo JARVIS: reutiliza los botones que ya existen.
-  const dockOrlando = $("dock-orlando");
-  if (dockOrlando) {
-    dockOrlando.addEventListener("click", () => {
-      $("btn-orlando").click();
-      orlandoPanel.scrollIntoView({ behavior: "smooth", block: "nearest" });
-    });
-  }
-  const dockAnalyze = $("dock-analyze");
-  if (dockAnalyze) {
-    dockAnalyze.addEventListener("click", () => $("btn-analyze").click());
-  }
+  // Dock mínimo: el micrófono toca el orbe.
   const dockMic = $("dock-mic");
   if (dockMic) {
     dockMic.addEventListener("click", () => orb.click());
-  }
-  const dockVoice = $("dock-voice");
-  if (dockVoice) {
-    dockVoice.addEventListener("click", () => {
-      const b = $("btn-test-voice");
-      if (b) b.click();
-    });
-  }
-  const dockConfig = $("dock-config");
-  if (dockConfig) {
-    dockConfig.addEventListener("click", () => toggleConfig());
   }
   // Si hay conversación guardada, la conversación se ve continuar y no
   // se repite el saludo; si no hay nada, Isis se presenta como siempre.

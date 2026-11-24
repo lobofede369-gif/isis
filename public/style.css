@@ -80,45 +80,19 @@ body {
   100% { top: 105%; }
 }
 
-/* Cabecera JARVIS: nombre ISIS centrado, brillando en turquesa */
+/* Cabecera mínima: solo el botón hamburguesa a la izquierda */
 .topbar {
   display: flex;
   align-items: center;
-  justify-content: center;
-  padding: 16px 18px 10px;
+  justify-content: flex-start;
+  padding: 12px 16px 4px;
   position: sticky;
   top: 0;
   background: rgba(1, 4, 9, 0.82);
   backdrop-filter: blur(10px);
-  border-bottom: 1px solid rgba(25, 240, 208, 0.25);
-  box-shadow: 0 1px 18px rgba(0, 212, 255, 0.18);
   z-index: 10;
 }
-.topbar .icon-btn { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); }
-.topbar .icon-btn:hover { transform: translateY(-50%) scale(1.05); }
-
-.brand { display: flex; flex-direction: column; align-items: center; gap: 2px; }
-.brand h1 {
-  margin: 0;
-  font-family: var(--font-display);
-  font-size: 1.7rem;
-  font-weight: 900;
-  letter-spacing: 12px;
-  text-indent: 12px;
-  color: var(--teal);
-  text-shadow: 0 0 16px var(--teal-glow), 0 0 44px rgba(25, 240, 208, 0.35);
-  animation: wordmarkGlow 3s ease-in-out infinite;
-}
-@keyframes wordmarkGlow {
-  0%, 100% { text-shadow: 0 0 14px var(--teal-glow), 0 0 38px rgba(25, 240, 208, 0.3); }
-  50% { text-shadow: 0 0 22px var(--teal-glow), 0 0 60px rgba(25, 240, 208, 0.5); }
-}
-.brand-sub {
-  color: var(--muted);
-  font-size: 0.68rem;
-  letter-spacing: 5px;
-  text-transform: uppercase;
-}
+.menu-btn { font-size: 1.35rem; line-height: 1; }
 
 .icon-btn {
   background: rgba(0, 40, 70, 0.5); color: var(--neon-bright);
@@ -135,18 +109,36 @@ body {
 
 main { max-width: 640px; margin: 0 auto; padding: 8px 16px 32px; position: relative; z-index: 1; }
 
-/* ---------------------------------------------------------- Orbe reactor (estilo JARVIS) */
+/* ---------------------------------------------------------- Orbe JARVIS (imagen) */
 .orb-section { text-align: center; padding: 14px 0 6px; }
 .orb {
-  --orb-size: min(264px, 72vw);
+  --orb-size: min(320px, 78vw);
   position: relative;
   width: var(--orb-size); height: var(--orb-size); border-radius: 50%;
   border: none; cursor: pointer; padding: 0;
   background: transparent;
   -webkit-tap-highlight-color: transparent;
   transition: transform 0.15s ease;
+  overflow: visible;
 }
 .orb:active { transform: scale(0.97); }
+
+/* La imagen del orbe (JARVIS), recortada en círculo */
+.orb-img {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: cover; border-radius: 50%; display: block;
+  box-shadow: inset 0 0 40px rgba(0, 0, 0, 0.6);
+}
+
+/* Anillo fino alrededor de la imagen: gira lento, refleja el estado */
+.orb-ring {
+  position: absolute; inset: -9px; border-radius: 50%;
+  border: 2px solid rgba(0, 212, 255, 0.22);
+  border-top-color: var(--neon-bright);
+  box-shadow: 0 0 18px rgba(0, 212, 255, 0.25);
+  animation: spin 9s linear infinite;
+  pointer-events: none;
+}
 
 /* Aura ondulada alrededor del reactor */
 .reactor-aura {
@@ -162,35 +154,7 @@ main { max-width: 640px; margin: 0 auto; padding: 8px 16px 32px; position: relat
   to { border-radius: 45% 55% 48% 52% / 56% 44% 58% 42%; transform: rotate(14deg) scale(1.04); }
 }
 
-.reactor-svg {
-  position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible;
-  filter: drop-shadow(0 0 5px rgba(25, 240, 208, 0.45));
-}
-.rx-ring, .rx-sphere { transform-box: fill-box; transform-origin: center; }
-.rx-dots-a circle { fill: none; stroke: var(--teal); stroke-width: 2.5; stroke-linecap: round; stroke-dasharray: 0.5 10; opacity: 0.85; }
-.rx-dots-a { animation: spin 26s linear infinite; }
-.rx-dots-b circle { fill: none; stroke: var(--neon); stroke-width: 2; stroke-linecap: round; stroke-dasharray: 0.5 8; opacity: 0.7; }
-.rx-dots-b { animation: spinRev 20s linear infinite; }
-.rx-blocks circle { fill: none; stroke: var(--teal); stroke-width: 13; stroke-dasharray: 16 8; opacity: 0.9; }
-.rx-blocks { animation: spin 34s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
-@keyframes spinRev { to { transform: rotate(-360deg); } }
-.rx-sphere { stroke: var(--teal-bright); }
-.rx-sphere circle, .rx-sphere ellipse { fill: none; stroke-width: 1; opacity: 0.95; }
-
-/* Partículas orbitando el reactor */
-.reactor-particles { position: absolute; inset: 0; animation: spin 18s linear infinite; pointer-events: none; }
-.reactor-particles .pt {
-  position: absolute; top: 50%; left: 50%;
-  width: 5px; height: 5px; margin: -2.5px 0 0 -2.5px; border-radius: 50%;
-  background: var(--teal-bright);
-  box-shadow: 0 0 8px var(--teal-glow), 0 0 16px rgba(25, 240, 208, 0.4);
-}
-.pt.p1 { transform: rotate(0deg) translateY(calc(var(--orb-size) * -0.485)); }
-.pt.p2 { transform: rotate(72deg) translateY(calc(var(--orb-size) * -0.485)); }
-.pt.p3 { transform: rotate(144deg) translateY(calc(var(--orb-size) * -0.485)); }
-.pt.p4 { transform: rotate(216deg) translateY(calc(var(--orb-size) * -0.485)); }
-.pt.p5 { transform: rotate(288deg) translateY(calc(var(--orb-size) * -0.485)); }
 
 /* Ondas de voz: solo salen del centro mientras Isis habla */
 .reactor-wave {
@@ -264,29 +228,19 @@ main { max-width: 640px; margin: 0 auto; padding: 8px 16px 32px; position: relat
 
 /* Estado: escuchando — pulso suave */
 .orb.listening { animation: orbPulse 1.6s ease-in-out infinite; }
-.orb.listening .rx-sphere { animation: sphereBreathe 1.6s ease-in-out infinite; }
+.orb.listening .orb-ring { animation-duration: 3s; box-shadow: 0 0 26px rgba(0, 212, 255, 0.45); }
 @keyframes orbPulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.03); } }
-@keyframes sphereBreathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
 
-/* Estado: hablando — la esfera pulsa al ritmo de la voz, anillos y partículas giran más rápido */
+/* Estado: hablando — la imagen pulsa al ritmo de la voz, el anillo gira más rápido */
 .orb.speaking { box-shadow: 0 0 60px rgba(125, 249, 255, 0.55), 0 0 130px rgba(25, 240, 208, 0.3); }
-.orb.speaking .reactor-svg { filter: drop-shadow(0 0 10px rgba(125, 249, 255, 0.7)); }
-.orb.speaking .rx-sphere { animation: sphereSpeak 0.62s ease-in-out infinite; }
-@keyframes sphereSpeak { 0%, 100% { transform: scale(1); } 35% { transform: scale(1.09); } 70% { transform: scale(1.03); } }
-.orb.speaking .rx-dots-a { animation-duration: 6s; }
-.orb.speaking .rx-dots-b { animation-duration: 5s; }
-.orb.speaking .rx-blocks { animation-duration: 8s; }
-.orb.speaking .reactor-particles { animation-duration: 4s; }
+.orb.speaking .orb-img { animation: imgSpeak 0.62s ease-in-out infinite; }
+@keyframes imgSpeak { 0%, 100% { transform: scale(1); } 35% { transform: scale(1.04); } 70% { transform: scale(1.01); } }
+.orb.speaking .orb-ring { animation-duration: 2s; box-shadow: 0 0 30px rgba(125, 249, 255, 0.6); }
 .orb.speaking .reactor-aura { animation-duration: 2.5s; }
 
-/* Estado: pensando — todo gira rápido */
+/* Estado: pensando — el anillo gira rápido */
 .orb.thinking { box-shadow: 0 0 50px rgba(0, 212, 255, 0.5), 0 0 110px rgba(0, 212, 255, 0.2); }
-.orb.thinking .rx-sphere { animation: sphereSpin 1.2s linear infinite; }
-@keyframes sphereSpin { to { transform: rotate(360deg); } }
-.orb.thinking .rx-dots-a { animation-duration: 3s; }
-.orb.thinking .rx-dots-b { animation-duration: 2.4s; }
-.orb.thinking .rx-blocks { animation-duration: 4s; }
-.orb.thinking .reactor-particles { animation-duration: 2s; }
+.orb.thinking .orb-ring { animation-duration: 1.2s; }
 
 /* ---------------------------------------------------------- Paneles HUD */
 .card {
@@ -512,14 +466,84 @@ main { max-width: 640px; margin: 0 auto; padding: 8px 16px 32px; position: relat
 .config-actions { display: flex; gap: 10px; flex-wrap: wrap; }
 .config-msg { color: #5cffc8; font-size: 0.92rem; }
 
-footer {
-  text-align: center; color: var(--muted); font-size: 0.82rem;
-  padding: 16px; letter-spacing: 2px; text-transform: uppercase;
-  font-family: var(--font-display);
+/* ---------------------------------------------------------- Menú hamburguesa (drawer) */
+.drawer-backdrop {
+  position: fixed; inset: 0; z-index: 40;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(2px);
 }
+.drawer {
+  position: fixed; top: 0; left: 0; bottom: 0; z-index: 50;
+  width: min(320px, 86vw);
+  background: linear-gradient(180deg, rgba(2, 16, 32, 0.98), rgba(1, 6, 14, 0.98));
+  border-right: 1px solid rgba(0, 212, 255, 0.35);
+  box-shadow: 0 0 40px rgba(0, 212, 255, 0.2);
+  transform: translateX(-105%);
+  transition: transform 0.28s ease;
+  overflow-y: auto;
+  padding: 14px 16px 28px;
+}
+.drawer.open { transform: translateX(0); }
+.drawer-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 4px 0 12px;
+  border-bottom: 1px solid rgba(0, 212, 255, 0.2);
+}
+.drawer-title {
+  font-family: var(--font-display);
+  font-size: 1.2rem; font-weight: 900; letter-spacing: 10px;
+  color: var(--teal);
+  text-shadow: 0 0 14px var(--teal-glow);
+}
+.drawer .banner { margin-top: 12px; }
+.drawer-menu {
+  display: flex; flex-direction: column; gap: 6px;
+  margin-top: 14px;
+}
+.menu-item {
+  display: flex; align-items: center; gap: 10px;
+  background: rgba(0, 30, 55, 0.55);
+  border: 1px solid rgba(0, 212, 255, 0.25);
+  border-radius: 4px;
+  color: var(--text);
+  font-family: var(--font-body); font-size: 1rem; font-weight: 600;
+  letter-spacing: 0.5px; text-align: left;
+  padding: 13px 14px; cursor: pointer;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+.menu-item:hover, .menu-item:active {
+  border-color: var(--neon);
+  background: rgba(0, 40, 70, 0.8);
+  box-shadow: 0 0 16px rgba(0, 212, 255, 0.3);
+}
+.drawer-hint { color: var(--muted); font-size: 0.85rem; margin: 16px 2px 0; }
+
+/* ---------------------------------------------------------- Paneles de módulos */
+.panels {
+  position: fixed; inset: 0; z-index: 30;
+  background: var(--bg);
+  overflow-y: auto;
+  padding: 12px 16px 40px;
+}
+.panel-bar {
+  position: sticky; top: 0; z-index: 5;
+  display: flex; align-items: center; gap: 12px;
+  background: rgba(1, 4, 9, 0.92);
+  backdrop-filter: blur(10px);
+  padding: 8px 0 12px;
+  border-bottom: 1px solid rgba(0, 212, 255, 0.2);
+}
+.panel-title {
+  font-family: var(--font-display);
+  font-size: 0.85rem; font-weight: 700; letter-spacing: 2.5px;
+  text-transform: uppercase;
+  color: var(--neon-bright);
+  text-shadow: 0 0 12px rgba(0, 212, 255, 0.5);
+}
+.panel-section { max-width: 640px; margin: 18px auto 0; }
 
 @media (prefers-reduced-motion: reduce) {
-  .scanline, .particles, .brand h1, .reactor-aura, .rx-ring, .rx-sphere, .reactor-particles, .reactor-wave, .orb.listening, .orb.mood-bromeando { animation: none !important; }
+  .scanline, .particles, .reactor-aura, .orb-ring, .reactor-wave, .orb.listening, .orb.mood-bromeando, .orb.speaking .orb-img { animation: none !important; }
 }
 
 /* Selector de voz */
@@ -566,32 +590,21 @@ footer {
 }
 .wake-hint { text-align: center; font-size: 0.8rem; margin: 6px 0 0; }
 
-/* ---------------------------------------------------------- Dock estilo JARVIS (compacto) */
-.dock {
-  display: flex; align-items: flex-end; justify-content: space-between;
-  gap: 4px; margin: 10px 0 8px; padding: 10px 6px 6px;
-  background: linear-gradient(180deg, rgba(0, 30, 50, 0.55), rgba(1, 8, 18, 0.85));
-  border: 1px solid rgba(25, 240, 208, 0.3);
-  border-radius: 10px 10px 4px 4px;
-  box-shadow: 0 -2px 22px rgba(25, 240, 208, 0.12), inset 0 0 24px rgba(0, 212, 255, 0.05);
+/* ---------------------------------------------------------- Dock mínimo (escribir + enviar + micrófono) */
+.dock-min {
+  display: flex; align-items: center; gap: 10px;
+  margin-top: 14px;
 }
-.dock-btn {
-  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px;
-  background: none; border: none; cursor: pointer; padding: 4px 2px;
-  color: var(--teal); font-family: var(--font-body); font-size: 0.68rem;
-  letter-spacing: 1.5px; text-transform: uppercase;
-  opacity: 0.85; transition: opacity 0.2s ease, transform 0.2s ease, color 0.2s ease;
-}
-.dock-btn svg { width: 22px; height: 22px; }
-.dock-btn:hover, .dock-btn:active { opacity: 1; color: var(--teal-bright); transform: translateY(-2px); }
-.dock-btn:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
-.dock-mic {
-  flex: 0 0 56px; height: 56px; margin: 0 2px;
-  border-radius: 50%;
+.dock-min .chat-form { flex: 1; margin-top: 0; }
+.mic-btn {
+  flex: 0 0 48px; width: 48px; height: 48px; border-radius: 50%;
   border: 1px solid rgba(25, 240, 208, 0.65);
   background: radial-gradient(circle at 35% 30%, rgba(25, 240, 208, 0.35), rgba(2, 20, 38, 0.9) 70%);
-  box-shadow: 0 0 22px rgba(25, 240, 208, 0.45), inset 0 0 14px rgba(25, 240, 208, 0.3);
-  justify-content: center; color: var(--teal-bright);
+  box-shadow: 0 0 18px rgba(25, 240, 208, 0.4), inset 0 0 12px rgba(25, 240, 208, 0.3);
+  color: var(--teal-bright); cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: transform 0.15s ease;
 }
-.dock-mic svg { width: 26px; height: 26px; }
-.dock-mic:hover, .dock-mic:active { transform: translateY(-4px); }
+.mic-btn svg { width: 24px; height: 24px; }
+.mic-btn:hover, .mic-btn:active { transform: translateY(-2px); }
+.mic-btn:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }

@@ -16,43 +16,16 @@
   <div class="particles"></div>
   <div class="scanline"></div>
   <header class="topbar">
-    <div class="brand">
-      <h1>ISIS</h1>
-      <span class="brand-sub">tu asistente</span>
-    </div>
-    <button id="btn-config" class="icon-btn" aria-label="Configuración">⚙️</button>
+    <button id="btn-menu" class="icon-btn menu-btn" aria-label="Menú">☰</button>
   </header>
 
   <main>
-    <!-- Orbe de voz -->
+    <!-- Orbe JARVIS -->
     <section class="orb-section">
-      <button id="orb" class="orb reactor" aria-label="Toca para hablar">
+      <button id="orb" class="orb" aria-label="Toca para hablar">
         <span class="reactor-aura" aria-hidden="true"></span>
-        <svg class="reactor-svg" viewBox="0 0 240 240" aria-hidden="true">
-          <defs>
-            <radialGradient id="rxGlow" cx="50%" cy="42%" r="65%">
-              <stop offset="0%" stop-color="#7df9ff" stop-opacity="0.5" />
-              <stop offset="55%" stop-color="#19f0d0" stop-opacity="0.18" />
-              <stop offset="100%" stop-color="#19f0d0" stop-opacity="0" />
-            </radialGradient>
-          </defs>
-          <circle class="rx-glow" cx="120" cy="120" r="58" fill="url(#rxGlow)" stroke="none" />
-          <g class="rx-ring rx-dots-a"><circle cx="120" cy="120" r="112" /></g>
-          <g class="rx-ring rx-dots-b"><circle cx="120" cy="120" r="100" /></g>
-          <g class="rx-ring rx-blocks"><circle cx="120" cy="120" r="86" /></g>
-          <g class="rx-sphere">
-            <circle cx="120" cy="120" r="52" />
-            <ellipse cx="120" cy="120" rx="52" ry="20" />
-            <ellipse cx="120" cy="120" rx="52" ry="38" />
-            <ellipse cx="120" cy="120" rx="20" ry="52" />
-            <ellipse cx="120" cy="120" rx="38" ry="52" />
-            <ellipse cx="120" cy="120" rx="52" ry="16" transform="rotate(45 120 120)" />
-            <ellipse cx="120" cy="120" rx="52" ry="16" transform="rotate(-45 120 120)" />
-          </g>
-        </svg>
-        <span class="reactor-particles" aria-hidden="true">
-          <span class="pt p1"></span><span class="pt p2"></span><span class="pt p3"></span><span class="pt p4"></span><span class="pt p5"></span>
-        </span>
+        <span class="orb-ring" aria-hidden="true"></span>
+        <img class="orb-img" src="/isis-orb.jpg" alt="" />
         <span class="reactor-wave w1" aria-hidden="true"></span>
         <span class="reactor-wave w2" aria-hidden="true"></span>
         <span class="reactor-wave w3" aria-hidden="true"></span>
@@ -62,24 +35,8 @@
         <p id="orb-mood" class="orb-mood" hidden></p>
       </div>
       <p id="kokoro-status" class="voice-note" hidden></p>
-      <div id="wake-row" class="wake-row">
-        <label class="wake-toggle">
-          <input type="checkbox" id="wake-toggle" checked />
-          <span class="wake-switch"></span>
-          <span>Escucha continua</span>
-        </label>
-        <button id="btn-wake" class="small-btn" type="button" hidden>Activar escucha</button>
-      </div>
-      <p class="hint wake-hint">Solo escucha con esta página abierta · Di “Isis” para activarme.</p>
       <p id="voice-note" class="voice-note" hidden></p>
     </section>
-
-    <!-- Aviso de clave -->
-    <div id="key-banner" class="banner" hidden>
-      Todavía no tengo tu clave de FableAI. Pégala en
-      <button class="link-btn" id="banner-config">Configuración</button>
-      para que pueda pensar en vivo con Claude.
-    </div>
 
     <!-- Conversación (plegable: colapsada por defecto, solo la última respuesta) -->
     <section class="card chat-card collapsed" id="chat-card">
@@ -92,91 +49,52 @@
         <div id="chat" class="chat"></div>
         <p class="hint">Isis responde por voz. Las preguntas de clima usan el clima en vivo; nunca culpan a la clave de Claude.</p>
       </div>
-      <nav class="dock" aria-label="Accesos rápidos de Isis">
-        <button id="dock-orlando" class="dock-btn" type="button" aria-label="Revisar Orlando">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="2.5" /><path d="M12 12 L19 5" /></svg>
-          <span>Orlando</span>
-        </button>
-        <button id="dock-analyze" class="dock-btn" type="button" aria-label="Análisis">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4 20 H20" /><path d="M7 20 V12" /><path d="M12 20 V6" /><path d="M17 20 V9" /></svg>
-          <span>Análisis</span>
-        </button>
-        <button id="dock-mic" class="dock-btn dock-mic" type="button" aria-label="Hablar">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11 a7 7 0 0 0 14 0" /><path d="M12 18 v3" /></svg>
-        </button>
-        <button id="dock-voice" class="dock-btn" type="button" aria-label="Voz">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9 v6 h4 l5 4 V5 L8 9 H4 z" /><path d="M16.5 8.5 a4.5 4.5 0 0 1 0 7" /><path d="M19 6 a8 8 0 0 1 0 12" /></svg>
-          <span>Voz</span>
-        </button>
-        <button id="dock-config" class="dock-btn" type="button" aria-label="Configuración">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3.2" /><path d="M12 2.5 v2.6 M12 18.9 v2.6 M2.5 12 h2.6 M18.9 12 h2.6 M5 5 l1.9 1.9 M17.1 17.1 L19 19 M19 5 l-1.9 1.9 M6.9 17.1 L5 19" /></svg>
-          <span>Ajustes</span>
-        </button>
-      </nav>
+    </section>
+
+    <!-- Dock mínimo: escribir + enviar + micrófono -->
+    <div class="dock-min">
       <form id="chat-form" class="chat-form">
         <input id="chat-input" type="text" placeholder="Escríbele a Isis…" autocomplete="off" />
         <button type="submit" class="send-btn" aria-label="Enviar">➤</button>
       </form>
-    </section>
+      <button id="dock-mic" class="mic-btn" type="button" aria-label="Hablar">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11 a7 7 0 0 0 14 0" /><path d="M12 18 v3" /></svg>
+      </button>
+    </div>
+  </main>
 
-    <!-- Orlando -->
-    <section class="card">
-      <div class="card-head">
-        <h2>Orlando · Bot PCN</h2>
-        <button id="btn-orlando" class="small-btn">Actualizar</button>
-      </div>
-      <div id="orlando-panel" class="orlando-panel">
-        <p class="muted">Cargando estado de Orlando…</p>
-      </div>
-    </section>
+  <!-- Menú hamburguesa: todos los módulos viven aquí -->
+  <div id="drawer-backdrop" class="drawer-backdrop" hidden></div>
+  <aside id="drawer" class="drawer" aria-label="Menú de Isis">
+    <div class="drawer-head">
+      <span class="drawer-title">ISIS</span>
+      <button id="btn-close-drawer" class="icon-btn" aria-label="Cerrar menú">✕</button>
+    </div>
+    <div id="key-banner" class="banner" hidden>
+      Todavía no tengo tu clave de FableAI. Pégala en
+      <button class="link-btn" id="banner-config">Configuración</button>
+      para que pueda pensar en vivo con Claude.
+    </div>
+    <nav class="drawer-menu" aria-label="Módulos">
+      <button type="button" class="menu-item" id="menu-config" data-panel="panel-config">⚙️ Configuración</button>
+      <button type="button" class="menu-item" id="menu-voice" data-panel="panel-voice">🔊 Voz de Isis</button>
+      <button type="button" class="menu-item" id="menu-memory" data-panel="panel-memory">🧠 Memoria</button>
+      <button type="button" class="menu-item" id="menu-contacts" data-panel="panel-contacts">👥 Contactos</button>
+      <button type="button" class="menu-item" id="menu-orlando" data-panel="panel-orlando">🤖 Orlando · Bot PCN</button>
+      <button type="button" class="menu-item" id="menu-analyze" data-panel="panel-analyze">📊 Análisis</button>
+    </nav>
+    <p class="drawer-hint">Todo lo de Isis vive aquí. Toca un módulo para abrirlo.</p>
+  </aside>
 
-    <!-- Análisis -->
-    <section class="card">
-      <div class="card-head">
-        <h2>Análisis de tu entorno</h2>
-        <button id="btn-analyze" class="small-btn">Analizar</button>
-      </div>
-      <div id="analysis" class="analysis">
-        <p class="muted">Isis revisa Orlando, tus reclutadores y tus pendientes, y te recomienda decisiones.</p>
-      </div>
-    </section>
-
-    <!-- Lo aprendido -->
-    <section class="card">
-      <h2>Lo que Isis ha aprendido</h2>
-      <ul id="facts-list" class="facts-list"></ul>
-      <form id="fact-form" class="fact-form">
-        <input id="fact-input" type="text" placeholder="Enséñale algo a Isis…" autocomplete="off" />
-        <button type="submit" class="small-btn">Enseñar</button>
-      </form>
-      <div class="memory-section">
-        <h3>Memoria</h3>
-        <p id="memory-summary" class="muted">Todavía no hay resumen.</p>
-        <p class="muted">Intercambios guardados: <span id="memory-count">0</span> de 12.</p>
-        <div class="memory-actions">
-          <button id="btn-export-memory" class="small-btn" type="button">Exportar memoria</button>
-          <button id="btn-import-memory" class="small-btn" type="button">Importar memoria</button>
-          <input id="memory-file" type="file" accept="application/json,.json" hidden />
-          <button id="btn-clear-memory" class="small-btn danger" type="button">Borrar memoria</button>
-        </div>
-        <p id="memory-msg" class="config-msg" hidden></p>
-      </div>
-    </section>
-
-    <!-- Contactos -->
-    <section class="card">
-      <h2>Contactos</h2>
-      <ul id="contacts-list" class="facts-list"></ul>
-      <form id="contact-form" class="fact-form contact-form">
-        <input id="contact-name" type="text" placeholder="Nombre (ej. Griselda)" autocomplete="off" />
-        <input id="contact-phone" type="tel" placeholder="Número (ej. 56 2375 0929)" autocomplete="off" />
-        <button type="submit" class="small-btn">Agregar</button>
-      </form>
-      <p class="hint">Isis usa estos contactos cuando le pides que le escriba a alguien por WhatsApp o por SMS desde tu número.</p>
-    </section>
+  <!-- Paneles de módulos (pantalla completa; se abre uno a la vez desde el menú) -->
+  <div id="panels" class="panels" hidden>
+    <div class="panel-bar">
+      <button id="btn-back-panel" class="small-btn" type="button">← Volver</button>
+      <span id="panel-title" class="panel-title"></span>
+    </div>
 
     <!-- Configuración -->
-    <section id="config" class="card config" hidden>
+    <section id="panel-config" class="card panel-section" hidden>
       <h2>Configuración</h2>
       <p class="muted">
         Tus claves viven <strong>solo en este navegador</strong> (localStorage).
@@ -207,19 +125,6 @@
         <input id="cfg-textbee-device" type="text" placeholder="Pégalo aquí… (puedes dejarlo vacío)" autocomplete="off" />
         <span id="cfg-textbee-device-state" class="field-state">Sin guardar (opcional)</span>
       </label>
-      <div class="field">
-        <span>Voz de Isis (Kokoro, gratis)</span>
-        <div class="voice-row">
-          <select id="voice-select" aria-label="Voz del teléfono"></select>
-          <button id="btn-test-voice" class="small-btn" type="button">Probar voz</button>
-        </div>
-        <span id="voice-state" class="field-state">Buscando voces en español…</span>
-        <div class="voice-row">
-          <select id="kokoro-voice-select" aria-label="Voz de Kokoro"></select>
-          <button id="btn-download-kokoro" class="small-btn" type="button">Descargar voz de Isis</button>
-        </div>
-        <span id="kokoro-voice-state" class="field-state">Aún no descargada (~88 MB, una sola vez · mejor con Wi-Fi).</span>
-      </div>
       <div class="config-actions">
         <button id="btn-save-config" class="primary-btn">Guardar claves</button>
         <button id="btn-clear-config" class="small-btn danger">Borrar claves</button>
@@ -230,12 +135,98 @@
         La clave de API de n8n se crea en n8n → Settings → n8n API.
         El token de WhatsApp se consigue en Meta for Developers → tu app «PCN Bot» → WhatsApp → API Setup → Token de acceso.
         La clave de TextBee y el ID del dispositivo se consiguen en textbee.dev: crea una cuenta, instala la app en tu teléfono, agrega el dispositivo escaneando el QR y crea una API key. Sin el ID, Isis usa tu dispositivo por defecto.
+      </p>
+    </section>
+
+    <!-- Voz de Isis -->
+    <section id="panel-voice" class="card panel-section" hidden>
+      <h2>Voz de Isis</h2>
+      <div class="field">
+        <span>Voz del teléfono</span>
+        <div class="voice-row">
+          <select id="voice-select" aria-label="Voz del teléfono"></select>
+          <button id="btn-test-voice" class="small-btn" type="button">Probar voz</button>
+        </div>
+        <span id="voice-state" class="field-state">Buscando voces en español…</span>
+      </div>
+      <div class="field">
+        <span>Voz de Isis (Kokoro, gratis)</span>
+        <div class="voice-row">
+          <select id="kokoro-voice-select" aria-label="Voz de Kokoro"></select>
+          <button id="btn-download-kokoro" class="small-btn" type="button">Descargar voz de Isis</button>
+        </div>
+        <span id="kokoro-voice-state" class="field-state">Aún no descargada (~88 MB, una sola vez · mejor con Wi-Fi).</span>
+      </div>
+      <div id="wake-row" class="wake-row">
+        <label class="wake-toggle">
+          <input type="checkbox" id="wake-toggle" checked />
+          <span class="wake-switch"></span>
+          <span>Escucha continua</span>
+        </label>
+        <button id="btn-wake" class="small-btn" type="button" hidden>Activar escucha</button>
+      </div>
+      <p class="hint wake-hint">Solo escucha con esta página abierta · Di “Isis” para activarme.</p>
+      <p class="muted small">
         La voz de Kokoro no necesita clave: corre en este teléfono con kokoro-js (modelo Kokoro-82M, gratis, código abierto). No se descarga sola: toca “Descargar voz de Isis” cuando quieras (~88 MB, una sola vez, mejor con Wi-Fi) y luego queda guardada; mientras tanto, o si no se puede cargar, Isis habla con la voz del teléfono.
       </p>
     </section>
-  </main>
 
-  <footer>Isis responde por voz · Toca el círculo para hablar</footer>
+    <!-- Memoria -->
+    <section id="panel-memory" class="card panel-section" hidden>
+      <h2>Lo que Isis ha aprendido</h2>
+      <ul id="facts-list" class="facts-list"></ul>
+      <form id="fact-form" class="fact-form">
+        <input id="fact-input" type="text" placeholder="Enséñale algo a Isis…" autocomplete="off" />
+        <button type="submit" class="small-btn">Enseñar</button>
+      </form>
+      <div class="memory-section">
+        <h3>Memoria</h3>
+        <p id="memory-summary" class="muted">Todavía no hay resumen.</p>
+        <p class="muted">Intercambios guardados: <span id="memory-count">0</span> de 12.</p>
+        <div class="memory-actions">
+          <button id="btn-export-memory" class="small-btn" type="button">Exportar memoria</button>
+          <button id="btn-import-memory" class="small-btn" type="button">Importar memoria</button>
+          <input id="memory-file" type="file" accept="application/json,.json" hidden />
+          <button id="btn-clear-memory" class="small-btn danger" type="button">Borrar memoria</button>
+        </div>
+        <p id="memory-msg" class="config-msg" hidden></p>
+      </div>
+    </section>
+
+    <!-- Contactos -->
+    <section id="panel-contacts" class="card panel-section" hidden>
+      <h2>Contactos</h2>
+      <ul id="contacts-list" class="facts-list"></ul>
+      <form id="contact-form" class="fact-form contact-form">
+        <input id="contact-name" type="text" placeholder="Nombre (ej. Griselda)" autocomplete="off" />
+        <input id="contact-phone" type="tel" placeholder="Número (ej. 56 2375 0929)" autocomplete="off" />
+        <button type="submit" class="small-btn">Agregar</button>
+      </form>
+      <p class="hint">Isis usa estos contactos cuando le pides que le escriba a alguien por WhatsApp o por SMS desde tu número.</p>
+    </section>
+
+    <!-- Orlando -->
+    <section id="panel-orlando" class="card panel-section" hidden>
+      <div class="card-head">
+        <h2>Orlando · Bot PCN</h2>
+        <button id="btn-orlando" class="small-btn">Actualizar</button>
+      </div>
+      <div id="orlando-panel" class="orlando-panel">
+        <p class="muted">Cargando estado de Orlando…</p>
+      </div>
+    </section>
+
+    <!-- Análisis -->
+    <section id="panel-analyze" class="card panel-section" hidden>
+      <div class="card-head">
+        <h2>Análisis de tu entorno</h2>
+        <button id="btn-analyze" class="small-btn">Analizar</button>
+      </div>
+      <div id="analysis" class="analysis">
+        <p class="muted">Isis revisa Orlando, tus reclutadores y tus pendientes, y te recomienda decisiones.</p>
+      </div>
+    </section>
+  </div>
 
   <script src="/app.js"></script>
 </body>
