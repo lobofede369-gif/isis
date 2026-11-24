@@ -10,10 +10,11 @@ enseñan.
 - **Voz**: toca el círculo y habla; Isis contesta por voz. Habla con
   Kokoro-82M, un modelo de voz gratis y de código abierto que corre
   directo en el teléfono (kokoro-js + ONNX): sin clave, sin servidor y
-  sin costo por uso. La primera vez descarga el modelo (~88 MB) y luego
-  queda guardado en el navegador; mientras descarga, o si Kokoro falla,
-  Isis usa la voz del teléfono (Web Speech API), así nunca se queda
-  muda. En **Configuración** se elige su voz de Kokoro: solo hay 3 en
+  sin costo por uso. No se descarga solo al abrir la app: se baja
+  cuando Santiago toca "Descargar voz de Isis" en Configuración
+  (~88 MB, una sola vez) y luego queda guardado en el navegador;
+  mientras tanto, o si Kokoro falla, Isis usa la voz del teléfono
+  (Web Speech API), así nunca se queda muda. En **Configuración** se elige su voz de Kokoro: solo hay 3 en
   español — Dora (femenina, por defecto), Alex y Santa (masculinas) —
   con botón "Probar voz"; y también se elige la voz del teléfono (lista
   de voces en español del teléfono: por defecto toma la más femenina y
@@ -101,24 +102,36 @@ kokoro-js (v1.2.1, desde jsDelivr) y ONNX Runtime Web. Nada de claves,
 nada de servidores, nada de costo por uso: el audio no sale del
 teléfono.
 
-1. Al abrir Isis, la voz se descarga sola en segundo plano (primera
-   vez ~88 MB: el modelo cuantizado q8 desde Hugging Face,
-   `onnx-community/Kokoro-82M-v1.0-ONNX`); luego queda guardada en la
-   caché del navegador y ya no se descarga. Mientras descarga, Isis
-   muestra "Descargando la voz de Isis por primera vez…" y sigue
-   hablando con la voz del teléfono; el chat no se bloquea.
+1. Al abrir Isis NO se descarga nada: la app arranca ligera. La voz se
+   descarga solo cuando Santiago toca **"Descargar voz de Isis"** en
+   Configuración (primera vez ~88 MB: el modelo cuantizado q8 desde
+   Hugging Face, `onnx-community/Kokoro-82M-v1.0-ONNX`); luego queda
+   guardada en la caché del navegador y ya no se descarga. Mientras
+   descarga, Isis muestra "Descargando la voz de Isis por primera
+   vez…" y sigue hablando con la voz del teléfono; el chat no se
+   bloquea. Si Kokoro aún no está descargada, Isis habla con la voz
+   del teléfono de inmediato y deja una nota breve junto al orbe
+   ("La voz de Isis aún no está descargada — descárgala en
+   Configuración").
 2. En **Configuración → Voz de Isis (Kokoro, gratis)** se elige la voz:
    solo hay 3 en español — `ef_dora` (Dora, femenina, por defecto),
    `em_alex` (Alex, masculina) y `em_santa` (Santa, masculina,
    navideña). La elección se guarda en el navegador
-   (`isis_kokoro_voice`). El botón "Probar voz" la prueba con una
-   frase cálida; si Kokoro no está lista, prueba la voz del teléfono
-   (y reintenta la descarga si había fallado).
+   (`isis_kokoro_voice`). El botón "Probar voz" también empieza la
+   descarga si aún no está lista y prueba la voz de inmediato con la
+   voz del teléfono (cuando la descarga termina, la siguiente prueba
+   ya usa Kokoro).
 3. La síntesis corre en el teléfono (WASM): en un teléfono modesto
    puede tardar unos segundos por respuesta, por eso Isis habla
    oración por oración, generando la siguiente mientras suena la
    actual. Si una oración tarda más de 60 s o algo falla, Isis sigue
    con la voz del teléfono desde ahí; nunca se queda muda.
+
+**Por qué q8 y no q4**: el archivo `model_q4.onnx` del mismo repo pesa
+~291 MB (medido en Hugging Face: 305 215 966 bytes), más del triple
+que el q8 (~88 MB: `model_quantized.onnx` = 92 361 116 bytes). Cambiar
+a q4 haría la descarga más pesada y lenta, no más ligera, así que se
+quedó el q8.
 
 **Limitación honesta**: la calidad de las voces en español de Kokoro
 es buena pero no tan expresiva como las voces de paga, y la primera
