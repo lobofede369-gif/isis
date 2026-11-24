@@ -8,6 +8,21 @@ enseñan.
 ## Qué hace
 
 - **Voz**: toca el círculo y habla; Isis contesta por voz (Web Speech API).
+  En **Configuración** puedes elegir su voz (lista de voces en español del
+  teléfono, con botón "Probar voz"): por defecto toma la más natural
+  disponible, en orden es-MX, es-US, es-419, es-ES, prefiriendo las voces
+  "Natural"/"Neural" de Google. Habla con tono 1.1 y velocidad 0.95, y
+  respeta la puntuación: divide cada respuesta en oraciones y hace una
+  pausa corta entre ellas, para que las comas y los puntos suenen naturales.
+  Isis usa el nombre "Santiago" como máximo una vez por respuesta, y solo
+  cuando suena natural.
+- **Escucha continua ("Isis")**: con la página abierta, di "Isis" y se
+  activa sin tocar nada ("Isis, ¿cómo va Orlando?" se procesa todo junto;
+  si solo dices "Isis", espera tu siguiente frase). Se enciende con tu
+  primer toque al orbe o con el botón "Activar escucha" y sigue sola; el
+  interruptor "Escucha continua" la prende y la apaga. Solo escucha
+  mientras la página está abierta y activa: si cierras la app o el
+  navegador la pausa, no escucha.
 - **Chat con Claude**: cada mensaje llama a FableAI (`claude-sonnet-5-5`).
 - **Orlando**: revisa en vivo las ejecuciones de n8n y si el workflow
   "WhatsApp PCN - Respuestas naturales" está activo. Sin clave de n8n,
