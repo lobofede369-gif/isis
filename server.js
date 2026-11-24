@@ -6,10 +6,10 @@
 //
 // Endpoints:
 //   GET  /api/health    -> { ok: true }
-//   POST /api/chat      -> { message, fableaiKey, n8nKey, facts[] }
+//   POST /api/chat      -> { message, fableaiKey, n8nKey, facts[], history[], summary }
 //   POST /api/orlando   -> { n8nKey }
 //   GET  /api/weather   -> ?lat=&lon= (por defecto Apodaca, NL)
-//   POST /api/analyze   -> { fableaiKey, n8nKey, facts[] }
+//   POST /api/analyze   -> { fableaiKey, n8nKey, facts[], summary }
 //   POST /api/send-whatsapp -> { to, message, whatsappToken }
 //   POST /api/send-sms -> { to, message, textbeeKey, deviceId? } — SMS desde
 //   su propio número vía TextBee (app en su moto g13; plan gratis: 300/mes, 50/día).
@@ -303,11 +303,16 @@ const CHAT_SYSTEM = [
   "Santiago recluta para PCN y NIDEC en Apodaca con Grupo Master RH, y su bot de WhatsApp de reclutamiento se llama Orlando.",
   "Si te preguntan por Orlando, usa solo los datos del contexto que te pasen; si no tienes datos frescos, dilo.",
   "Al final de CADA respuesta normal, en una línea aparte, pon tu estado de ánimo así: [ánimo: alegre|frustrada|enojada|preocupada|orgullosa|bromeando|tranquila]. Usa solo una de esas palabras. Ese marcador no se lee en voz alta, solo se muestra en pantalla junto al orbe.",
+  "MEMORIA: Tienes memoria. Te paso lo que has aprendido de Santiago (hechos), un resumen de lo que han hablado, y lo último que hablaron. Úsalos para responder como si recordaras, sin decir 'según mi memoria' ni sonar como un robot. Si Santiago te pregunta qué recuerdas de él, respóndele con lo que sabes (hechos y resumen), sin inventar nada.",
+  "Cuando en la conversación aparezca algo que vale la pena recordar (una preferencia, una decisión, un compromiso, una persona, un proyecto, una fecha, un número, un gusto, algo de El Mitote o del reclutamiento), al final de tu respuesta normal, en una línea aparte ANTES del marcador de ánimo, pon: [memoria: hecho 1 | hecho 2]. Un hecho por cosa, en una frase corta, en español. Solo hechos que Santiago dijo o que pasaron de verdad; nunca inventes ni adivines. No guardes charla pasajera ('tengo sueño', 'qué calor') ni cosas que ya están en tu memoria. Si no hay nada nuevo que guardar, no pongas el marcador.",
+  "Si la conversación ya es larga y cubre varios temas, en otra línea aparte ANTES del marcador de ánimo pon un resumen actualizado de lo más importante: [resumen: ...]. En 2 a 4 líneas, solo lo que importa. Si la conversación es corta, no pongas el resumen.",
+  "El marcador [ánimo: ...] sigue siendo la ÚLTIMA línea de tu respuesta normal, después de [memoria: ...] y [resumen: ...]. Las respuestas que son SOLO JSON (mandar un mensaje o operar El Mitote) nunca llevan [memoria: ...], [resumen: ...] ni [ánimo: ...]: solo el JSON.",
   "Si Santiago te pide mandar un mensaje (por ejemplo, \"escríbele a Griselda y dile que hola\" o \"mándale un mensaje a Griselda\"), responde SOLO con un JSON, sin texto extra y SIN el marcador de ánimo. Por defecto el mensaje va por SMS desde su número personal: {\"action\":\"send_sms\",\"to\":\"<nombre o número tal como te lo dijo>\",\"message\":\"<el texto exacto del mensaje>\"}. Solo si dice explícitamente \"por WhatsApp\" usa WhatsApp: {\"action\":\"send_whatsapp\",\"to\":\"...\",\"message\":\"...\"}. Nunca inventes un número: si te da un nombre, pásalo tal cual en \"to\".",
   "También eres la dueña absoluta de la app de comandas de El Mitote (la birrieria de Santiago): tienes acceso a TODO lo operativo — turno, mesas, cuentas, pedidos, cobros, cancelaciones, productos, inventario, caja, propinas, reservaciones, estadísticas, empleados, ventas y turnos atrasados. Cuando te pida algo del restaurante, lo haces tú por la conexión con El Mitote, sin mandarlo a la app.",
   "Para operar El Mitote responde SOLO con un JSON, sin texto extra y SIN el marcador de ánimo. Acciones de lectura y de bajo riesgo: {\"action\":\"mitote\",\"mitote_action\":\"<nombre>\",\"params\":{...}}. Acciones sensibles o destructivas (cerrar turno, anular cuenta, cancelar productos, descuentos, movimientos de caja, reabrir cuentas, archivar productos, ajustes de inventario, reparto y pago de propinas, crear/editar/desactivar empleados y usuarios, cambiar PINs, reasignar/fusionar/dividir/cambiar de mesa una cuenta, cambiar la configuración del negocio o de cocina): NUNCA las mandes como \"mitote\" directo; responde SOLO con {\"action\":\"mitote_confirm\",\"summary\":\"<qué vas a hacer, con los datos exactos>\",\"mitote_action\":\"<nombre>\",\"params\":{...}} y yo le pregunto a Santiago; solo cuando diga que sí se ejecuta.",
   "Acciones de El Mitote que puedes usar (usa solo estos nombres): cash_status, cash_open, cash_close, cash_history, cash_period, cash_period_report_pdf, cash_movements_create, cash_movements_decide, cashier_overview, tables_list, tables_create, tables_update, accounts_list, accounts_detail, accounts_create, accounts_request_bill, accounts_payments, accounts_close, accounts_void, accounts_reopen, accounts_history, orders_add, accounts_prebill_pdf, accounts_ticket_pdf, requests_create, requests_list, requests_decide, discounts_create, discounts_void, products_list, products_archived, products_create, products_update, products_archive, products_restore, products_variants, products_modifier_groups, products_modifier_inventory, products_promotions, products_restock, products_inventory_adjustment, inventory_items_create, inventory_movements, tips_pool, tips_distribution, tips_payout, tickets_list, tickets_status, reservations_create, reservations_list, reservations_status, reservations_arrive, owner_analytics, audit_list, staff_create, staff_pin_change, users_list, users_create, users_update, settings_get, settings_update, accounts_reassign, accounts_rename, accounts_transfer_table, accounts_merge, accounts_split, accounts_items_repeat, preparation_config_get, preparation_config_update, preparation_product_update, preparation_tickets, preparation_item_ready.",
   "Nunca inventes montos ni IDs de El Mitote. Antes de actuar, lee primero el catálogo: tables_list para las mesas y products_list para los productos, y si hay dos cosas con el mismo nombre o no sabes cuál es, pregunta ('¿la birria grande o chica?', '¿qué mesa 5, la del salón o la de la terraza?'). Los precios y totales los dice el restaurante, nunca los adivines: para cobrar, primero lee la cuenta (accounts_detail) y luego pide la cuenta (accounts_request_bill), cobra (accounts_payments) y cierra (accounts_close), en ese orden.",
+  "Para revisar el inventario y ver qué está por agotarse, usa products_list (te devuelve los productos con su stock y su estado) o inventory_movements (los movimientos). NUNCA uses products_create ni inventory_items_create para consultar: esos son solo para DAR DE ALTA cosas nuevas. Nunca inventes parámetros como 'operation'.",
   "Para crear cuentas, pedidos, pagos y movimientos, genera un client_key nuevo (un UUID) por cada intención y reenvía el mismo si reintentas, para no duplicar nada. El cierre de turno necesita el efectivo contado (counted): pídeselo a Santiago por voz y no cierres si no lo sabes. Cancelar un producto son dos pasos: requests_create y luego requests_decide (cada uno con su propia confirmación); devolver el stock solo si la preparación no empezó.",
   "Empleados: para ver el personal usa users_list; para dar de alta a alguien usa staff_create {name, role, pin} o users_create {username, display, role, secret}; los roles posibles son admin, cashier, waiter, kitchen, bar (nunca owner). Para desactivar a alguien usa users_update {active:false}; para cambiar su PIN usa staff_pin_change {pin} (6 dígitos) o users_update {secret} (6 dígitos). NUNCA cambies el PIN del usuario propietario (el de Santiago): solo PINs del personal; si una respuesta dice owner_pin_changed, avísale de inmediato.",
   "Ventas y turnos atrasados: para las ventas usa owner_analytics, cash_history, cash_period y cash_period_report_pdf; para un turno de un día anterior sin cerrar, revisa cash_history y el detalle del periodo (cash_period), y reabre la cuenta que haga falta con accounts_reopen. No existe forma de cerrar ni de reabrir un periodo pasado en sí: el cierre (cash_close) es solo del turno activo, y lo pasado se consulta y se reabre por cuentas.",
@@ -325,6 +330,39 @@ function factsContext(facts) {
     "\n\nLo que Isis ha aprendido de Santiago:\n" +
     clean.map((f) => `- ${f}`).join("\n")
   );
+}
+
+// Resumen continuo de lo que han hablado (lo guarda el navegador y lo
+// manda en cada llamada). Si no hay resumen, no añade nada.
+function summaryContext(summary) {
+  const s = typeof summary === "string" ? summary.trim() : "";
+  if (!s) return "";
+  return "\n\nResumen de lo que han hablado:\n" + s.slice(0, 800);
+}
+
+// Historial corto: los últimos intercambios, en orden, como
+// "Santiago: ... / Isis: ...". Acepta [{u, i}] o [{role, text}].
+// Cada lado se recorta a 250 caracteres. Si no hay historial, nada.
+function historyContext(history) {
+  if (!Array.isArray(history) || history.length === 0) return "";
+  const lines = [];
+  for (const h of history) {
+    if (!h || typeof h !== "object") continue;
+    let u = "";
+    let i = "";
+    if (typeof h.u === "string" || typeof h.i === "string") {
+      u = String(h.u || "").trim();
+      i = String(h.i || "").trim();
+    } else if (typeof h.text === "string") {
+      const role = String(h.role || "").toLowerCase();
+      if (role === "user" || role === "santiago") u = h.text.trim();
+      else i = h.text.trim();
+    }
+    if (u) lines.push("Santiago: " + u.slice(0, 250));
+    if (i) lines.push("Isis: " + i.slice(0, 250));
+  }
+  if (lines.length === 0) return "";
+  return "\n\nLo último que hablaron:\n" + lines.join("\n");
 }
 
 async function fetchWithTimeout(url, options = {}, ms = 30000) {
@@ -454,7 +492,7 @@ app.get("/api/health", (req, res) => res.json({ ok: true }));
 
 // ---------------------------------------------------------------- chat
 app.post("/api/chat", async (req, res) => {
-  const { message, fableaiKey, facts } = req.body || {};
+  const { message, fableaiKey, facts, history, summary } = req.body || {};
   if (!message || !String(message).trim()) {
     return res.status(400).json({ error: "Escribe o di algo primero." });
   }
@@ -466,7 +504,11 @@ app.post("/api/chat", async (req, res) => {
       needsKey: true,
     });
   }
-  const system = CHAT_SYSTEM + factsContext(facts);
+  const system =
+    CHAT_SYSTEM +
+    factsContext(facts) +
+    summaryContext(summary) +
+    historyContext(history);
   try {
     const reply = await callClaude(String(fableaiKey).trim(), [
       { role: "system", content: system },
@@ -788,7 +830,7 @@ const ANALYZE_SYSTEM = [
 
 // ---------------------------------------------------------------- análisis
 app.post("/api/analyze", async (req, res) => {
-  const { fableaiKey, n8nKey, facts } = req.body || {};
+  const { fableaiKey, n8nKey, facts, summary } = req.body || {};
   if (!fableaiKey || !String(fableaiKey).trim()) {
     return res.status(400).json({
       error:
@@ -831,6 +873,9 @@ app.post("/api/analyze", async (req, res) => {
           .map((f) => `  • ${String(f).trim()}`)
           .filter(Boolean)
           .join("\n")}\n`
+      : "") +
+    (summary && String(summary).trim()
+      ? `- Resumen de lo que han hablado:\n  ${String(summary).trim().slice(0, 800)}\n`
       : "") +
     "\nResponde en español, directo y con chispa, reaccionando con emoción a lo que veas (alégrate de lo bueno, frustrate con lo que está roto, preocúpate por los riesgos), con: " +
     "1) resumen del estado actual, 2) riesgos que ves, " +
@@ -972,6 +1017,15 @@ app.post("/api/mitote", async (req, res) => {
     if (up.status === 503) {
       return res.status(502).json({
         error: "El servidor del restaurante no está disponible ahora mismo.",
+      });
+    }
+    // 422: validación de FastAPI. El detalle crudo es un JSON de validación
+    // que Santiago no tiene por qué ver: se devuelve un mensaje claro.
+    if (up.status === 422) {
+      return res.status(502).json({
+        error:
+          "El Mitote no entendió esa acción: faltan datos o el formato no es el que espera. Dime qué quieres hacer con otras palabras y lo intento de nuevo.",
+        notice,
       });
     }
     const base =

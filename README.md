@@ -9,13 +9,19 @@ enseñan.
 
 - **Voz**: toca el círculo y habla; Isis contesta por voz (Web Speech API).
   En **Configuración** puedes elegir su voz (lista de voces en español del
-  teléfono, con botón "Probar voz"): por defecto toma la más natural
-  disponible, en orden es-MX, es-US, es-419, es-ES, prefiriendo las voces
-  "Natural"/"Neural" de Google. Habla con tono 1.1 y velocidad 0.95, y
-  respeta la puntuación: divide cada respuesta en oraciones y hace una
-  pausa corta entre ellas, para que las comas y los puntos suenen naturales.
-  Isis usa el nombre "Santiago" como máximo una vez por respuesta, y solo
-  cuando suena natural.
+  teléfono, con botón "Probar voz"): por defecto toma la más femenina y
+  natural disponible, en orden es-MX, es-US, es-419, es-ES, prefiriendo
+  las voces femeninas "Natural"/"Neural" de Google. Habla con el tono y
+  la velocidad de su ánimo (alegre suena más aguda y rápida; preocupada,
+  más baja y lenta; enojada o frustrada, grave y pausada) y respeta la
+  puntuación: divide cada respuesta en oraciones y hace una pausa que
+  depende de cómo termina cada una (más larga tras "!" o "?", corta tras
+  ".", con una variación pequeña para no sonar metronómica), para que las
+  comas y los puntos suenen naturales. Isis usa el nombre "Santiago" como
+  máximo una vez por respuesta, y solo cuando suena natural. Las voces son
+  las del propio teléfono (Google TTS en Android): para la más natural,
+  descarga una voz de alta calidad en español en los ajustes de texto a
+  voz del teléfono.
 - **Escucha continua ("Isis")**: con la página abierta, di "Isis" y se
   activa sin tocar nada ("Isis, ¿cómo va Orlando?" se procesa todo junto;
   si solo dices "Isis", espera tu siguiente frase). Se enciende con tu
@@ -32,7 +38,10 @@ enseñan.
 - **Análisis**: analiza el entorno (Orlando, reclutadores, decisiones
   pendientes) y recomienda qué hacer.
 - **Aprendizaje**: "Lo que Isis ha aprendido" guarda hechos en el navegador;
-  se le puede enseñar y hacer que olvide cualquiera.
+  se le puede enseñar y hacer que olvide cualquiera. Isis también aprende
+  sola de la conversación: cuando aparece algo que vale la pena recordar
+  (una preferencia, una decisión, un compromiso, una fecha, un número),
+  lo guarda sin que Santiago tenga que enseñárselo (ver **Memoria**).
 - **SMS (por defecto)**: si Santiago le dice "escríbele a Griselda y dile
   que hola", Isis lo manda por SMS desde su propio número con TextBee (su
   teléfono hace de gateway). Los contactos viven en el navegador
@@ -65,6 +74,42 @@ enseñan.
   de emergencia (se hacen a mano). La pre-cuenta y el ticket se generan
   en PDF y se abren para imprimirlos (la impresión física no existe en
   el servidor del restaurante).
+
+## Memoria
+
+Isis recuerda lo que hablan, sin que Santiago tenga que enseñárselo todo:
+
+- **Hechos**: cuando en la conversación aparece algo que vale la pena
+  recordar (una preferencia, una decisión, un compromiso, una persona, un
+  proyecto, una fecha, un número, un gusto, algo de El Mitote o del
+  reclutamiento), Claude lo marca con `[memoria: ...]` y el cliente lo
+  guarda en el navegador, sin duplicados. Santiago también puede enseñarle
+  hechos a mano en "Lo que Isis ha aprendido" y borrarlos uno por uno.
+- **Resumen**: cuando la conversación ya es larga y cubre varios temas,
+  Claude deja un resumen actualizado con `[resumen: ...]` (2 a 4 líneas de
+  lo más importante). Se ve en la sección **Memoria** de la tarjeta de
+  hechos.
+- **Historial**: los últimos 12 intercambios se guardan y al recargar la
+  página la conversación se ve continuar, como burbujas. Las respuestas
+  que son acciones (mandar un SMS, operar El Mitote) no se guardan como
+  JSON: solo el texto final que Isis le muestra y le dice a Santiago.
+
+**Dónde vive**: solo en el navegador de Santiago (localStorage), como las
+claves. El servidor no guarda nada y en Render Free no hay disco
+persistente. **Límites**: 60 hechos (si se pasa, se borra el más viejo),
+12 intercambios, resumen de ~800 caracteres, 250 caracteres por lado de
+cada intercambio.
+
+**Respaldo**: en la sección **Memoria** hay tres botones — **Exportar
+memoria** (descarga un JSON con hechos, resumen e historial),
+**Importar memoria** (carga un respaldo y reemplaza lo guardado; si el
+archivo no es válido, avisa y no borra nada) y **Borrar memoria** (pide
+confirmación y borra solo hechos, resumen e historial; nunca borra las
+claves, los contactos ni la configuración de voz).
+
+**Limitación honesta**: si Santiago borra los datos del navegador o abre
+Isis en otro dispositivo, la memoria no está ahí salvo que importe su
+respaldo. La memoria es de este navegador, no de la cuenta.
 
 ## Correrlo local
 
@@ -118,10 +163,10 @@ cada llamada y las usa solo para hablar con FableAI / n8n.
 | Método | Ruta | Descripción |
 |--------|------|-------------|
 | GET | `/api/health` | `{ ok: true }` |
-| POST | `/api/chat` | `{ message, fableaiKey, n8nKey, facts[] }` |
+| POST | `/api/chat` | `{ message, fableaiKey, n8nKey, facts[], history[], summary }` — con memoria: hechos, últimos intercambios y resumen |
 | POST | `/api/orlando` | `{ n8nKey }` — estado de Orlando |
 | GET | `/api/weather?lat=&lon=` | Clima actual (Open-Meteo) |
-| POST | `/api/analyze` | `{ fableaiKey, n8nKey, facts[] }` |
+| POST | `/api/analyze` | `{ fableaiKey, n8nKey, facts[], summary }` |
 | POST | `/api/send-whatsapp` | `{ to, message, whatsappToken }` — manda un texto por WhatsApp desde el bot |
 | POST | `/api/send-sms` | `{ to, message, textbeeKey, deviceId? }` — manda un SMS desde su número (TextBee) |
 | POST | `/api/send-sms` | `{ to, message, textbeeKey }` — manda un SMS por TextBee desde tu número |
