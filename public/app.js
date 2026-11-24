@@ -335,6 +335,10 @@
   let speakGen = 0;
   let speakingNow = false;
   let thinkingNow = false;
+  function setThinking(on) {
+    thinkingNow = !!on;
+    orb.classList.toggle("thinking", thinkingNow);
+  }
   function splitSentences(text) {
     const clean = String(text || "").replace(/\s+/g, " ").trim();
     if (!clean) return [];
@@ -719,6 +723,32 @@
     }
   }
 
+  // La respuesta de Claude para operar El Mitote es solo un JSON:
+  // {"action":"mitote","mitote_action":"<nombre>","params":{...}} o
+  // {"action":"mitote_confirm","summary":"...","mitote_action":"<nombre>","params":{...}}
+  function parseMitoteAction(reply) {
+    if (!reply) return null;
+    let text = String(reply).trim();
+    text = text.replace(/\[ánimo:\s*[a-záéíóúñ]+\s*\]/gi, "").trim();
+    const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (fenced) text = fenced[1].trim();
+    if (!text.startsWith("{")) return null;
+    try {
+      const parsed = JSON.parse(text);
+      if (
+        parsed &&
+        (parsed.action === "mitote" || parsed.action === "mitote_confirm") &&
+        typeof parsed.mitote_action === "string" &&
+        parsed.mitote_action.trim()
+      ) {
+        return parsed;
+      }
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
+
   async function handleSendSms(action) {
     const to = String(action.to || "").trim();
     const message = String(action.message || "").trim();
@@ -816,9 +846,177 @@
     setOrbStatus(idleStatus());
   }
 
+  // ---------------------------------------------------------- el mitote
+  // Operar El Mitote por voz: Claude responde con un JSON mitote (lectura
+  // o bajo riesgo) o mitote_confirm (destructivo). El token de El Mitote
+  // NUNCA sale del servidor: el cliente solo manda {action, params} al
+  // proxy y el servidor pone el Bearer.
+  // Confirmación en dos pasos para lo destructivo: la acción queda
+  // pendiente (solo en memoria, nunca se guarda) hasta que Santiago diga
+  // que sí en el siguiente turno. Solo un "sí" explícito la ejecuta; un
+  // "no" o cualquier otra cosa la descarta.
+  let pendingMitote = null;
+  function normalizeAnswer(text) {
+    return String(text || "")
+      .trim()
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
+  }
+  function isAffirmative(text) {
+    const t = normalizeAnswer(text);
+    return /^(si|confirmo|confirmado|adelante|dale|va|ok|orale|hazlo|claro|de acuerdo|por supuesto)\b/.test(t);
+  }
+  function isNegative(text) {
+    const t = normalizeAnswer(text);
+    return /^(no|cancela|mejor no|olvidalo|no lo hagas|nel|nop)\b/.test(t);
+  }
+
+  function storeMitoteConfirm(action, fableaiKey, originalText) {
+    pendingMitote = {
+      mitote_action: action.mitote_action,
+      params: action.params || {},
+      summary: action.summary || "",
+      originalText: originalText || null,
+      fableaiKey: fableaiKey || null,
+    };
+    const ask = `Voy a ${action.summary || action.mitote_action}. ¿Confirmas?`;
+    addBubble("isis", ask, "El Mitote · confirmar");
+    speak(ask);
+    setOrbStatus("Te espero: ¿confirmas?");
+  }
+
+  async function callMitoteProxy(mitoteAction, params) {
+    return postJSON("/api/mitote", { action: mitoteAction, params: params || {} });
+  }
+
+  // Ejecuta una acción de El Mitote y le devuelve el resultado a Claude
+  // para que pida el siguiente paso o el resumen final (por ejemplo,
+  // cobrar: leer cuenta → pedir cuenta → cobrar → cerrar). Máximo 6
+  // pasos por cadena, para no entrar en bucle.
+  async function runMitoteChain(fableaiKey, originalText, firstAction, firstParams, depth) {
+    const step = depth || 0;
+    if (step >= 6) {
+      const msg = "Ya hice varios pasos en El Mitote, mejor revisamos juntos qué falta.";
+      addBubble("isis", msg, "El Mitote");
+      speak(msg);
+      return;
+    }
+    setOrbStatus("Isis está trabajando en El Mitote…");
+    let result;
+    try {
+      result = await callMitoteProxy(firstAction, firstParams);
+    } catch (e) {
+      const msg = "No pude hablar con el servidor ahora mismo.";
+      addBubble("isis", msg, "El Mitote");
+      speak(msg);
+      setOrbStatus(idleStatus());
+      return;
+    }
+    const d = result.data || {};
+    if (!result.ok) {
+      const msg = d.error || "El Mitote no aceptó esa acción.";
+      addBubble("isis", msg, "El Mitote");
+      speak(msg);
+      setOrbStatus(idleStatus());
+      return;
+    }
+    const note = d.notice ? d.notice + " " : "";
+    const summary = d.summary || "Listo.";
+    // PDF (pre-cuenta, ticket, reporte): se abre para imprimirlo y se
+    // deja también un enlace en el chat por si el navegador lo bloquea.
+    if (d.pdfBase64) {
+      try {
+        const bin = atob(d.pdfBase64);
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        const blob = new Blob([bytes], { type: d.contentType || "application/pdf" });
+        const url = URL.createObjectURL(blob);
+        const bubble = addBubble("isis", note + summary + " Te dejé el PDF para imprimirlo.", "El Mitote");
+        const a = document.createElement("a");
+        a.href = url;
+        a.target = "_blank";
+        a.rel = "noopener";
+        a.textContent = "Abrir PDF para imprimir";
+        a.style.display = "block";
+        a.style.marginTop = "6px";
+        bubble.appendChild(a);
+        try { window.open(url, "_blank"); } catch (e) {}
+      } catch (e) {
+        addBubble("isis", note + summary, "El Mitote");
+      }
+    } else {
+      addBubble("isis", note + summary, "El Mitote");
+    }
+    // Sin clave de Claude no hay cadena: se habla el resumen y listo.
+    if (!fableaiKey) {
+      speak(note + summary);
+      setOrbStatus(idleStatus());
+      return;
+    }
+    try {
+      const followUp =
+        `Santiago te pidió: "${originalText || ""}". ` +
+        `Ya ejecuté la acción de El Mitote "${firstAction}" y el restaurante respondió: ${JSON.stringify(d.data ?? d)}. ` +
+        `Si falta un paso para completar lo que pidió, responde SOLO con el siguiente JSON (mitote o mitote_confirm). ` +
+        `Si ya está completo, responde con el resumen final para Santiago, en español y breve, con el marcador de ánimo.`;
+      const chatRes = await postJSON("/api/chat", {
+        message: followUp,
+        fableaiKey,
+        facts: loadFacts(),
+      });
+      if (!chatRes.ok || !chatRes.data.reply) {
+        speak(note + summary);
+        setOrbStatus(idleStatus());
+        return;
+      }
+      const { text: cleanReply, mood } = extractMood(chatRes.data.reply);
+      if (mood) setMood(mood);
+      const next = parseMitoteAction(cleanReply);
+      if (next) {
+        if (next.action === "mitote_confirm") {
+          storeMitoteConfirm(next, fableaiKey, originalText);
+        } else {
+          await runMitoteChain(fableaiKey, originalText, next.mitote_action, next.params || {}, step + 1);
+        }
+      } else {
+        addBubble("isis", cleanReply, "Isis");
+        speak(cleanReply);
+      }
+    } catch (e) {
+      speak(note + summary);
+    }
+    if (!pendingMitote) setOrbStatus(idleStatus());
+  }
+
   async function sendMessage(text) {
     addBubble("user", text);
     chatInput.value = "";
+
+    // Confirmación pendiente de El Mitote: solo un "sí" explícito ejecuta.
+    if (pendingMitote) {
+      const pending = pendingMitote;
+      pendingMitote = null;
+      if (isAffirmative(text)) {
+        setThinking(true);
+        const params = { ...(pending.params || {}), confirmed: true };
+        await runMitoteChain(pending.fableaiKey, pending.originalText || text, pending.mitote_action, params, 0);
+        setThinking(false);
+        if (!pendingMitote) setOrbStatus(idleStatus());
+        setTimeout(maybeStartWake, 1200);
+        return;
+      }
+      if (isNegative(text)) {
+        const msg = "Listo, no lo hago.";
+        addBubble("isis", msg, "El Mitote");
+        speak(msg);
+        setOrbStatus(idleStatus());
+        setTimeout(maybeStartWake, 1200);
+        return;
+      }
+      // Otra cosa: se descarta la confirmación y el mensaje sigue normal.
+      addBubble("isis", "De acuerdo, dejamos eso sin hacer.", "El Mitote");
+    }
 
     // Clima: siempre por /api/weather, nunca culpar a la clave de Claude.
     if (isWeatherQuestion(text)) {
@@ -826,7 +1024,7 @@
       setTimeout(maybeStartWake, 1200);
       return;
     }
-    thinkingNow = true;
+    setThinking(true);
 
     const { fableaiKey, n8nKey } = getKeys();
     const facts = loadFacts();
@@ -867,8 +1065,18 @@
           if (action.action === "send_sms") await handleSendSms(action);
           else await handleSendWhatsapp(action);
         } else {
-          addBubble("isis", cleanReply, data.claudeLive ? "Isis · Claude en vivo" : "Isis");
-          speak(cleanReply);
+          const mitote = parseMitoteAction(cleanReply);
+          if (mitote) {
+            // Claude pidió operar El Mitote: se ejecuta la cadena de pasos.
+            if (mitote.action === "mitote_confirm") {
+              storeMitoteConfirm(mitote, fableaiKey, text);
+            } else {
+              await runMitoteChain(fableaiKey, text, mitote.mitote_action, mitote.params || {}, 0);
+            }
+          } else {
+            addBubble("isis", cleanReply, data.claudeLive ? "Isis · Claude en vivo" : "Isis");
+            speak(cleanReply);
+          }
         }
         if (data.needsKey) refreshKeyUI();
       } else {
@@ -879,7 +1087,7 @@
       addBubble("isis", msg, "Isis");
       speak(msg);
     }
-    thinkingNow = false;
+    setThinking(false);
     orb.classList.remove("listening");
     setOrbStatus(idleStatus());
     setTimeout(maybeStartWake, 1200);
@@ -1036,9 +1244,36 @@
   }
   refreshVoices();
   updateWakeUI();
+  // Dock estilo JARVIS: reutiliza los botones que ya existen.
+  const dockOrlando = $("dock-orlando");
+  if (dockOrlando) {
+    dockOrlando.addEventListener("click", () => {
+      $("btn-orlando").click();
+      orlandoPanel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    });
+  }
+  const dockAnalyze = $("dock-analyze");
+  if (dockAnalyze) {
+    dockAnalyze.addEventListener("click", () => $("btn-analyze").click());
+  }
+  const dockMic = $("dock-mic");
+  if (dockMic) {
+    dockMic.addEventListener("click", () => orb.click());
+  }
+  const dockVoice = $("dock-voice");
+  if (dockVoice) {
+    dockVoice.addEventListener("click", () => {
+      const b = $("btn-test-voice");
+      if (b) b.click();
+    });
+  }
+  const dockConfig = $("dock-config");
+  if (dockConfig) {
+    dockConfig.addEventListener("click", () => toggleConfig());
+  }
   addBubble(
     "isis",
-    "Hola, soy Isis. Tócame el círculo y háblame, o escríbeme abajo. Si me preguntas por Orlando, lo reviso; si me preguntas por el clima, lo consulto en vivo; y si me pides que le escriba a alguien, lo mando por SMS desde tu número (o por WhatsApp si me lo pides así).",
+    "Hola, soy Isis. Tócame el círculo y háblame, o escríbeme abajo. Si me preguntas por Orlando, lo reviso; si me preguntas por el clima, lo consulto en vivo; si me pides que le escriba a alguien, lo mando por SMS desde tu número (o por WhatsApp si me lo pides así); y si me pides algo del restaurante, lo opero como dueña en El Mitote.",
     "Isis"
   );
 })();

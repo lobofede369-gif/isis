@@ -17,8 +17,7 @@
   <div class="scanline"></div>
   <header class="topbar">
     <div class="brand">
-      <span class="brand-dot"></span>
-      <h1>Isis</h1>
+      <h1>ISIS</h1>
       <span class="brand-sub">tu asistente</span>
     </div>
     <button id="btn-config" class="icon-btn" aria-label="Configuración">⚙️</button>
@@ -27,11 +26,36 @@
   <main>
     <!-- Orbe de voz -->
     <section class="orb-section">
-      <button id="orb" class="orb" aria-label="Toca para hablar">
-        <span class="orb-ring"></span>
-        <span class="orb-ring pulse"></span>
-        <span class="orb-ring pulse delay"></span>
-        <span class="orb-core">🎙️</span>
+      <button id="orb" class="orb reactor" aria-label="Toca para hablar">
+        <span class="reactor-aura" aria-hidden="true"></span>
+        <svg class="reactor-svg" viewBox="0 0 240 240" aria-hidden="true">
+          <defs>
+            <radialGradient id="rxGlow" cx="50%" cy="42%" r="65%">
+              <stop offset="0%" stop-color="#7df9ff" stop-opacity="0.5" />
+              <stop offset="55%" stop-color="#19f0d0" stop-opacity="0.18" />
+              <stop offset="100%" stop-color="#19f0d0" stop-opacity="0" />
+            </radialGradient>
+          </defs>
+          <circle class="rx-glow" cx="120" cy="120" r="58" fill="url(#rxGlow)" stroke="none" />
+          <g class="rx-ring rx-dots-a"><circle cx="120" cy="120" r="112" /></g>
+          <g class="rx-ring rx-dots-b"><circle cx="120" cy="120" r="100" /></g>
+          <g class="rx-ring rx-blocks"><circle cx="120" cy="120" r="86" /></g>
+          <g class="rx-sphere">
+            <circle cx="120" cy="120" r="52" />
+            <ellipse cx="120" cy="120" rx="52" ry="20" />
+            <ellipse cx="120" cy="120" rx="52" ry="38" />
+            <ellipse cx="120" cy="120" rx="20" ry="52" />
+            <ellipse cx="120" cy="120" rx="38" ry="52" />
+            <ellipse cx="120" cy="120" rx="52" ry="16" transform="rotate(45 120 120)" />
+            <ellipse cx="120" cy="120" rx="52" ry="16" transform="rotate(-45 120 120)" />
+          </g>
+        </svg>
+        <span class="reactor-particles" aria-hidden="true">
+          <span class="pt p1"></span><span class="pt p2"></span><span class="pt p3"></span><span class="pt p4"></span><span class="pt p5"></span>
+        </span>
+        <span class="reactor-wave w1" aria-hidden="true"></span>
+        <span class="reactor-wave w2" aria-hidden="true"></span>
+        <span class="reactor-wave w3" aria-hidden="true"></span>
       </button>
       <p id="orb-status" class="orb-status">Toca el círculo para hablar</p>
       <p id="orb-mood" class="orb-mood" hidden></p>
@@ -58,6 +82,27 @@
     <section class="card">
       <h2>Conversación</h2>
       <div id="chat" class="chat"></div>
+      <nav class="dock" aria-label="Accesos rápidos de Isis">
+        <button id="dock-orlando" class="dock-btn" type="button" aria-label="Revisar Orlando">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="2.5" /><path d="M12 12 L19 5" /></svg>
+          <span>Orlando</span>
+        </button>
+        <button id="dock-analyze" class="dock-btn" type="button" aria-label="Análisis">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4 20 H20" /><path d="M7 20 V12" /><path d="M12 20 V6" /><path d="M17 20 V9" /></svg>
+          <span>Análisis</span>
+        </button>
+        <button id="dock-mic" class="dock-btn dock-mic" type="button" aria-label="Hablar">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5 11 a7 7 0 0 0 14 0" /><path d="M12 18 v3" /></svg>
+        </button>
+        <button id="dock-voice" class="dock-btn" type="button" aria-label="Voz">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9 v6 h4 l5 4 V5 L8 9 H4 z" /><path d="M16.5 8.5 a4.5 4.5 0 0 1 0 7" /><path d="M19 6 a8 8 0 0 1 0 12" /></svg>
+          <span>Voz</span>
+        </button>
+        <button id="dock-config" class="dock-btn" type="button" aria-label="Configuración">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="3.2" /><path d="M12 2.5 v2.6 M12 18.9 v2.6 M2.5 12 h2.6 M18.9 12 h2.6 M5 5 l1.9 1.9 M17.1 17.1 L19 19 M19 5 l-1.9 1.9 M6.9 17.1 L5 19" /></svg>
+          <span>Ajustes</span>
+        </button>
+      </nav>
       <form id="chat-form" class="chat-form">
         <input id="chat-input" type="text" placeholder="Escríbele a Isis…" autocomplete="off" />
         <button type="submit" class="send-btn" aria-label="Enviar">➤</button>

@@ -9,6 +9,9 @@
   --neon-bright: #7df9ff;
   --neon-deep: #0090ff;
   --neon-glow: rgba(0, 212, 255, 0.55);
+  --teal: #19f0d0;
+  --teal-bright: #8ff7e6;
+  --teal-glow: rgba(25, 240, 208, 0.55);
   --text: #dff4ff;
   --muted: #8fb8d8;
   --danger: #ff5470;
@@ -77,46 +80,44 @@ body {
   100% { top: 105%; }
 }
 
+/* Cabecera JARVIS: nombre ISIS centrado, brillando en turquesa */
 .topbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 14px 18px;
+  justify-content: center;
+  padding: 16px 18px 10px;
   position: sticky;
   top: 0;
   background: rgba(1, 4, 9, 0.82);
   backdrop-filter: blur(10px);
-  border-bottom: 1px solid rgba(0, 212, 255, 0.35);
+  border-bottom: 1px solid rgba(25, 240, 208, 0.25);
   box-shadow: 0 1px 18px rgba(0, 212, 255, 0.18);
   z-index: 10;
 }
+.topbar .icon-btn { position: absolute; right: 14px; top: 50%; transform: translateY(-50%); }
+.topbar .icon-btn:hover { transform: translateY(-50%) scale(1.05); }
 
-.brand { display: flex; align-items: baseline; gap: 10px; }
+.brand { display: flex; flex-direction: column; align-items: center; gap: 2px; }
 .brand h1 {
   margin: 0;
   font-family: var(--font-display);
-  font-size: 1.45rem;
-  font-weight: 700;
-  letter-spacing: 5px;
-  color: var(--neon-bright);
-  text-shadow: 0 0 14px var(--neon-glow), 0 0 34px rgba(0, 212, 255, 0.3);
+  font-size: 1.7rem;
+  font-weight: 900;
+  letter-spacing: 12px;
+  text-indent: 12px;
+  color: var(--teal);
+  text-shadow: 0 0 16px var(--teal-glow), 0 0 44px rgba(25, 240, 208, 0.35);
+  animation: wordmarkGlow 3s ease-in-out infinite;
+}
+@keyframes wordmarkGlow {
+  0%, 100% { text-shadow: 0 0 14px var(--teal-glow), 0 0 38px rgba(25, 240, 208, 0.3); }
+  50% { text-shadow: 0 0 22px var(--teal-glow), 0 0 60px rgba(25, 240, 208, 0.5); }
 }
 .brand-sub {
   color: var(--muted);
-  font-size: 0.85rem;
-  letter-spacing: 2px;
+  font-size: 0.68rem;
+  letter-spacing: 5px;
   text-transform: uppercase;
-}
-.brand-dot {
-  width: 10px; height: 10px; border-radius: 50%;
-  background: var(--neon);
-  box-shadow: 0 0 12px var(--neon), 0 0 26px rgba(0, 212, 255, 0.6);
-  align-self: center;
-  animation: dotPulse 2.4s ease-in-out infinite;
-}
-@keyframes dotPulse {
-  0%, 100% { box-shadow: 0 0 10px var(--neon), 0 0 22px rgba(0, 212, 255, 0.5); }
-  50% { box-shadow: 0 0 18px var(--neon-bright), 0 0 40px rgba(0, 212, 255, 0.8); }
 }
 
 .icon-btn {
@@ -134,61 +135,79 @@ body {
 
 main { max-width: 640px; margin: 0 auto; padding: 8px 16px 32px; position: relative; z-index: 1; }
 
-/* ---------------------------------------------------------- Orbe */
-.orb-section { text-align: center; padding: 34px 0 8px; }
+/* ---------------------------------------------------------- Orbe reactor (estilo JARVIS) */
+.orb-section { text-align: center; padding: 26px 0 8px; }
 .orb {
+  --orb-size: min(264px, 72vw);
   position: relative;
-  width: 178px; height: 178px; border-radius: 50%;
-  border: 1px solid rgba(0, 212, 255, 0.6); cursor: pointer;
-  background: radial-gradient(circle at 35% 30%, #0a4a68, #04182e 62%, #010409);
-  box-shadow:
-    0 0 42px rgba(0, 212, 255, 0.5),
-    0 0 110px rgba(0, 212, 255, 0.22),
-    inset 0 0 34px rgba(0, 212, 255, 0.28),
-    inset 0 0 70px rgba(0, 144, 255, 0.12);
-  transition: box-shadow 0.3s ease, transform 0.15s ease;
+  width: var(--orb-size); height: var(--orb-size); border-radius: 50%;
+  border: none; cursor: pointer; padding: 0;
+  background: transparent;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 0.15s ease;
 }
-.orb:active { transform: scale(0.96); }
-.orb-ring {
-  position: absolute; inset: -12px;
-  border-radius: 50%;
-  border: 1px dashed rgba(0, 212, 255, 0.55);
-  animation: spin 16s linear infinite;
+.orb:active { transform: scale(0.97); }
+
+/* Aura ondulada alrededor del reactor */
+.reactor-aura {
+  position: absolute; inset: -6%;
+  border-radius: 58% 42% 55% 45% / 45% 55% 42% 58%;
+  background: radial-gradient(circle at 50% 50%, rgba(25, 240, 208, 0.16), rgba(0, 212, 255, 0.07) 55%, transparent 72%);
+  filter: blur(2px);
+  animation: auraMorph 9s ease-in-out infinite alternate;
+  pointer-events: none;
 }
+@keyframes auraMorph {
+  from { border-radius: 58% 42% 55% 45% / 45% 55% 42% 58%; transform: rotate(0deg) scale(1); }
+  to { border-radius: 45% 55% 48% 52% / 56% 44% 58% 42%; transform: rotate(14deg) scale(1.04); }
+}
+
+.reactor-svg {
+  position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible;
+  filter: drop-shadow(0 0 5px rgba(25, 240, 208, 0.45));
+}
+.rx-ring, .rx-sphere { transform-box: fill-box; transform-origin: center; }
+.rx-dots-a circle { fill: none; stroke: var(--teal); stroke-width: 2.5; stroke-linecap: round; stroke-dasharray: 0.5 10; opacity: 0.85; }
+.rx-dots-a { animation: spin 26s linear infinite; }
+.rx-dots-b circle { fill: none; stroke: var(--neon); stroke-width: 2; stroke-linecap: round; stroke-dasharray: 0.5 8; opacity: 0.7; }
+.rx-dots-b { animation: spinRev 20s linear infinite; }
+.rx-blocks circle { fill: none; stroke: var(--teal); stroke-width: 13; stroke-dasharray: 16 8; opacity: 0.9; }
+.rx-blocks { animation: spin 34s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
-.orb-ring.pulse {
-  inset: -12px;
-  border: 1px solid rgba(0, 212, 255, 0.65);
-  animation: ringPulse 2.4s ease-out infinite;
+@keyframes spinRev { to { transform: rotate(-360deg); } }
+.rx-sphere { stroke: var(--teal-bright); }
+.rx-sphere circle, .rx-sphere ellipse { fill: none; stroke-width: 1; opacity: 0.95; }
+
+/* Partículas orbitando el reactor */
+.reactor-particles { position: absolute; inset: 0; animation: spin 18s linear infinite; pointer-events: none; }
+.reactor-particles .pt {
+  position: absolute; top: 50%; left: 50%;
+  width: 5px; height: 5px; margin: -2.5px 0 0 -2.5px; border-radius: 50%;
+  background: var(--teal-bright);
+  box-shadow: 0 0 8px var(--teal-glow), 0 0 16px rgba(25, 240, 208, 0.4);
 }
-.orb-ring.pulse.delay { animation-delay: 1.2s; }
-@keyframes ringPulse {
-  0% { transform: scale(0.92); opacity: 0.85; }
-  100% { transform: scale(1.45); opacity: 0; }
+.pt.p1 { transform: rotate(0deg) translateY(calc(var(--orb-size) * -0.485)); }
+.pt.p2 { transform: rotate(72deg) translateY(calc(var(--orb-size) * -0.485)); }
+.pt.p3 { transform: rotate(144deg) translateY(calc(var(--orb-size) * -0.485)); }
+.pt.p4 { transform: rotate(216deg) translateY(calc(var(--orb-size) * -0.485)); }
+.pt.p5 { transform: rotate(288deg) translateY(calc(var(--orb-size) * -0.485)); }
+
+/* Ondas de voz: solo salen del centro mientras Isis habla */
+.reactor-wave {
+  position: absolute; top: 50%; left: 50%;
+  width: 52%; height: 52%; margin: -26% 0 0 -26%;
+  border-radius: 50%;
+  border: 2px solid rgba(125, 249, 255, 0.7);
+  opacity: 0; pointer-events: none;
 }
-.orb-core {
-  font-size: 3rem;
-  color: var(--neon-bright);
-  text-shadow: 0 0 18px var(--neon-glow);
+.orb.speaking .reactor-wave { animation: voiceWave 1.8s ease-out infinite; }
+.orb.speaking .reactor-wave.w2 { animation-delay: 0.6s; }
+.orb.speaking .reactor-wave.w3 { animation-delay: 1.2s; }
+@keyframes voiceWave {
+  0% { transform: scale(0.6); opacity: 0.75; }
+  100% { transform: scale(1.9); opacity: 0; }
 }
-.orb.listening {
-  box-shadow:
-    0 0 70px rgba(0, 212, 255, 0.85),
-    0 0 140px rgba(0, 212, 255, 0.35),
-    inset 0 0 44px rgba(0, 212, 255, 0.45);
-  animation: orbPulse 1.1s ease-in-out infinite;
-}
-@keyframes orbPulse {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.05); }
-}
-.orb.listening .orb-ring.pulse { animation-duration: 1.1s; }
-.orb.speaking {
-  box-shadow:
-    0 0 60px rgba(125, 249, 255, 0.75),
-    0 0 130px rgba(0, 212, 255, 0.3),
-    inset 0 0 40px rgba(125, 249, 255, 0.35);
-}
+
 .orb-status {
   font-family: var(--font-display);
   color: var(--neon);
@@ -238,6 +257,32 @@ main { max-width: 640px; margin: 0 auto; padding: 8px 16px 32px; position: relat
 .orb.mood-tranquila {
   box-shadow: 0 0 30px rgba(0, 212, 255, 0.35), 0 0 80px rgba(0, 212, 255, 0.15), inset 0 0 28px rgba(0, 212, 255, 0.2);
 }
+
+/* Estado: escuchando — pulso suave */
+.orb.listening { animation: orbPulse 1.6s ease-in-out infinite; }
+.orb.listening .rx-sphere { animation: sphereBreathe 1.6s ease-in-out infinite; }
+@keyframes orbPulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.03); } }
+@keyframes sphereBreathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
+
+/* Estado: hablando — la esfera pulsa al ritmo de la voz, anillos y partículas giran más rápido */
+.orb.speaking { box-shadow: 0 0 60px rgba(125, 249, 255, 0.55), 0 0 130px rgba(25, 240, 208, 0.3); }
+.orb.speaking .reactor-svg { filter: drop-shadow(0 0 10px rgba(125, 249, 255, 0.7)); }
+.orb.speaking .rx-sphere { animation: sphereSpeak 0.62s ease-in-out infinite; }
+@keyframes sphereSpeak { 0%, 100% { transform: scale(1); } 35% { transform: scale(1.09); } 70% { transform: scale(1.03); } }
+.orb.speaking .rx-dots-a { animation-duration: 6s; }
+.orb.speaking .rx-dots-b { animation-duration: 5s; }
+.orb.speaking .rx-blocks { animation-duration: 8s; }
+.orb.speaking .reactor-particles { animation-duration: 4s; }
+.orb.speaking .reactor-aura { animation-duration: 2.5s; }
+
+/* Estado: pensando — todo gira rápido */
+.orb.thinking { box-shadow: 0 0 50px rgba(0, 212, 255, 0.5), 0 0 110px rgba(0, 212, 255, 0.2); }
+.orb.thinking .rx-sphere { animation: sphereSpin 1.2s linear infinite; }
+@keyframes sphereSpin { to { transform: rotate(360deg); } }
+.orb.thinking .rx-dots-a { animation-duration: 3s; }
+.orb.thinking .rx-dots-b { animation-duration: 2.4s; }
+.orb.thinking .rx-blocks { animation-duration: 4s; }
+.orb.thinking .reactor-particles { animation-duration: 2s; }
 
 /* ---------------------------------------------------------- Paneles HUD */
 .card {
@@ -441,7 +486,7 @@ footer {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .scanline, .particles, .orb-ring, .orb-ring.pulse, .brand-dot, .orb.mood-bromeando { animation: none !important; }
+  .scanline, .particles, .brand h1, .reactor-aura, .rx-ring, .rx-sphere, .reactor-particles, .reactor-wave, .orb.listening, .orb.mood-bromeando { animation: none !important; }
 }
 
 /* Selector de voz */
@@ -487,3 +532,33 @@ footer {
   box-shadow: 0 0 10px var(--neon-glow);
 }
 .wake-hint { text-align: center; }
+
+/* ---------------------------------------------------------- Dock estilo JARVIS */
+.dock {
+  display: flex; align-items: flex-end; justify-content: space-between;
+  gap: 4px; margin: 14px 0 10px; padding: 16px 8px 8px;
+  background: linear-gradient(180deg, rgba(0, 30, 50, 0.55), rgba(1, 8, 18, 0.85));
+  border: 1px solid rgba(25, 240, 208, 0.3);
+  border-radius: 10px 10px 4px 4px;
+  box-shadow: 0 -2px 22px rgba(25, 240, 208, 0.12), inset 0 0 24px rgba(0, 212, 255, 0.05);
+}
+.dock-btn {
+  flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px;
+  background: none; border: none; cursor: pointer; padding: 4px 2px;
+  color: var(--teal); font-family: var(--font-body); font-size: 0.68rem;
+  letter-spacing: 1.5px; text-transform: uppercase;
+  opacity: 0.85; transition: opacity 0.2s ease, transform 0.2s ease, color 0.2s ease;
+}
+.dock-btn svg { width: 26px; height: 26px; }
+.dock-btn:hover, .dock-btn:active { opacity: 1; color: var(--teal-bright); transform: translateY(-2px); }
+.dock-btn:focus-visible { outline: 2px solid var(--teal); outline-offset: 2px; }
+.dock-mic {
+  flex: 0 0 64px; height: 64px; margin: 0 2px;
+  border-radius: 50%;
+  border: 1px solid rgba(25, 240, 208, 0.65);
+  background: radial-gradient(circle at 35% 30%, rgba(25, 240, 208, 0.35), rgba(2, 20, 38, 0.9) 70%);
+  box-shadow: 0 0 22px rgba(25, 240, 208, 0.45), inset 0 0 14px rgba(25, 240, 208, 0.3);
+  justify-content: center; color: var(--teal-bright);
+}
+.dock-mic svg { width: 30px; height: 30px; }
+.dock-mic:hover, .dock-mic:active { transform: translateY(-4px); }
