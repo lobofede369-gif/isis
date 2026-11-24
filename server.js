@@ -13,9 +13,10 @@
 //   POST /api/send-whatsapp -> { to, message, whatsappToken }
 //   POST /api/send-sms -> { to, message, textbeeKey, deviceId? } — SMS desde
 //   su propio número vía TextBee (app en su moto g13; plan gratis: 300/mes, 50/día).
-//   POST /api/tts      -> { text, googleKey, voiceName? } — voz natural
-//   de Google Cloud TTS (devuelve audio en base64; la clave nunca se guarda).
-//   GET  /api/voices   -> ?key= — lista de voces de Google.
+//   POST /api/tts      -> { text, azureKey, azureRegion, voiceName? } —
+//   voz natural de Azure AI Speech (devuelve audio en base64; la clave
+//   y la región nunca se guardan).
+//   POST /api/voices   -> { azureKey, azureRegion } — lista de voces de Azure.
 //   POST /api/mitote   -> { action, params } — proxy a El Mitote Comandas
 //   (el token ISIS vive SOLO en el servidor, en MITOTE_API_TOKEN; el
 //   navegador nunca lo ve). Lista blanca de acciones; lo destructivo
@@ -41,13 +42,33 @@ const TEXTBEE_API = "https://api.textbee.dev/api/v1/gateway/send-sms";
 // Ruta por dispositivo (cuando Santiago fija un deviceId en Configuración).
 const TEXTBEE_DEVICES = "https://api.textbee.dev/api/v1/gateway/devices";
 
-// Google Cloud Text-to-Speech — voz natural en la nube. La base se
-// puede cambiar en local con GOOGLE_TTS_API_BASE (para pruebas).
-const GOOGLE_TTS_API = (
-  process.env.GOOGLE_TTS_API_BASE || "https://texttospeech.googleapis.com/v1"
-).replace(/\/$/, "");
-// Voz de por defecto: es-MX-Neural2-A (femenina, español de México, Neural2).
-const GOOGLE_DEFAULT_VOICE = "es-MX-Neural2-A";
+// Microsoft Azure AI Speech — voz natural en la nube. El host depende
+// de la región del recurso (https://{region}.tts.speech.microsoft.com);
+// en local se puede forzar una base con AZURE_TTS_API_BASE (para pruebas).
+// Voz de por defecto: es-MX-DaliaNeural (femenina, español de México, neural).
+const AZURE_DEFAULT_VOICE = "es-MX-DaliaNeural";
+// Región de por defecto: eastus (Santiago la puede cambiar en Configuración
+// según donde quede su recurso de Speech).
+const AZURE_DEFAULT_REGION = "eastus";
+// Formato de audio que se le pide a Azure (MP3, 24 kHz, 48 kbps, mono).
+const AZURE_OUTPUT_FORMAT = "audio-24khz-48kbitrate-mono-mp3";
+
+function azureTtsBase(region) {
+  const override = (process.env.AZURE_TTS_API_BASE || "").trim();
+  if (override) return override.replace(/\/$/, "");
+  const r = (region && String(region).trim()) || AZURE_DEFAULT_REGION;
+  return `https://${encodeURIComponent(r)}.tts.speech.microsoft.com`;
+}
+
+// Escapa texto para meterlo dentro del SSML que se le manda a Azure.
+function escapeXml(s) {
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
 
 // El Mitote Comandas — proxy servidor a servidor.
 // La base se puede cambiar en local con MITOTE_API_BASE (para pruebas);
@@ -930,46 +951,47 @@ app.post("/api/analyze", async (req, res) => {
 // duerme: la primera llamada puede tardar 30-60 s, por eso el timeout es
 // de 65 s y si la respuesta tarda más de MITOTE_SLOW_MS se devuelve un
 // aviso (notice) para que Santiago sepa que el restaurante despertaba.
-// ---------------------------------------------------------------- tts (Google Cloud)
-// Voz natural de Google Cloud Text-to-Speech. La clave llega por
-// parámetro y nunca se guarda (igual que fableaiKey). Plan gratis:
-// ~1 millón de caracteres/mes para las voces Neural2/WaveNet (4
-// millones para las Standard). Si no hay clave o Google falla, el
+// ---------------------------------------------------------------- tts (Azure AI Speech)
+// Voz natural de Microsoft Azure AI Speech. La clave y la región llegan
+// por parámetro y nunca se guardan (igual que fableaiKey). Plan gratis
+// (Free F0): 500,000 caracteres/mes de voces neurales (~11 horas), con
+// límite de 20 peticiones por minuto. Si no hay clave o Azure falla, el
 // cliente usa la voz del teléfono como siempre.
 app.post("/api/tts", async (req, res) => {
-  const { text, googleKey, voiceName } = req.body || {};
+  const { text, azureKey, azureRegion, voiceName } = req.body || {};
   if (!text || !String(text).trim()) {
     return res.status(400).json({ error: "Escribe el texto primero." });
   }
-  if (!googleKey || !String(googleKey).trim()) {
+  if (
+    !azureKey ||
+    !String(azureKey).trim() ||
+    !azureRegion ||
+    !String(azureRegion).trim()
+  ) {
     return res.status(400).json({
       error:
-        "Falta la clave de Google en Configuración. Pégala ahí y lo intento de nuevo.",
-      needsGoogleKey: true,
+        "Falta la clave o la región de Azure en Configuración. Pégalas ahí y lo intento de nuevo.",
+      needsAzureKey: true,
     });
   }
   const voice =
-    (voiceName && String(voiceName).trim()) || GOOGLE_DEFAULT_VOICE;
-  let gRes;
+    (voiceName && String(voiceName).trim()) || AZURE_DEFAULT_VOICE;
+  const ssml =
+    `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="es-MX">` +
+    `<voice xml:lang="es-MX" xml:gender="Female" name="${escapeXml(voice)}">` +
+    `${escapeXml(String(text).trim())}</voice></speak>`;
+  let aRes;
   try {
-    gRes = await fetchWithTimeout(
-      `${GOOGLE_TTS_API}/text:synthesize?key=${encodeURIComponent(
-        String(googleKey).trim()
-      )}`,
+    aRes = await fetchWithTimeout(
+      `${azureTtsBase(azureRegion)}/cognitiveservices/v1`,
       {
         method: "POST",
         headers: {
-          "Content-Type": "application/json",
+          "Ocp-Apim-Subscription-Key": String(azureKey).trim(),
+          "Content-Type": "application/ssml+xml",
+          "X-Microsoft-OutputFormat": AZURE_OUTPUT_FORMAT,
         },
-        body: JSON.stringify({
-          input: { text: String(text).trim() },
-          voice: { languageCode: "es-MX", name: voice },
-          audioConfig: {
-            audioEncoding: "MP3",
-            speakingRate: 1.0,
-            pitch: 0,
-          },
-        }),
+        body: ssml,
         // Sin redirecciones: la clave nunca debe viajar a otro host.
         redirect: "error",
       },
@@ -978,90 +1000,98 @@ app.post("/api/tts", async (req, res) => {
   } catch (e) {
     return res.status(502).json({
       error:
-        "No pude hablar con Google ahora mismo. Inténtalo de nuevo en un momento.",
+        "No pude hablar con Azure ahora mismo. Inténtalo de nuevo en un momento.",
     });
   }
-  let data = {};
-  try {
-    data = await gRes.json();
-  } catch (e) {
-    data = {};
+  if (aRes.ok) {
+    let buf = null;
+    try {
+      buf = Buffer.from(await aRes.arrayBuffer());
+    } catch (e) {
+      buf = null;
+    }
+    if (buf && buf.length > 0) {
+      return res.json({
+        ok: true,
+        audioBase64: buf.toString("base64"),
+        contentType: "audio/mpeg",
+      });
+    }
   }
-  if (gRes.ok && data.audioContent) {
-    return res.json({
-      ok: true,
-      audioBase64: data.audioContent,
-      contentType: "audio/mpeg",
+  if (aRes.status === 401) {
+    return res.status(401).json({
+      error: "La clave de Azure no es válida. Revísala en Configuración.",
     });
   }
-  if (gRes.status === 400 || gRes.status === 403) {
-    return res.status(403).json({
-      error:
-        "La clave de Google no es válida o la API de Text-to-Speech no está habilitada en tu proyecto. Revísala en Configuración.",
-    });
-  }
-  if (gRes.status === 429) {
+  if (aRes.status === 429) {
     return res.status(429).json({
       error:
-        "Se acabó el saldo gratuito de Google. Isis seguirá hablando con la voz del teléfono.",
+        "Se acabó el saldo gratuito de Azure o se llegó al límite de peticiones. Isis seguirá hablando con la voz del teléfono.",
     });
   }
   return res.status(502).json({
-    error: "Google no aceptó la voz. Inténtalo de nuevo en un momento.",
+    error: "Azure no aceptó la voz. Inténtalo de nuevo en un momento.",
   });
 });
 
-// Lista de voces de Google Cloud Text-to-Speech (para el selector de
-// Configuración). La clave va en la consulta y no se guarda en ningún lado.
-app.get("/api/voices", async (req, res) => {
-  const key = String(req.query.key || "").trim();
-  if (!key) {
+// Lista de voces de Azure AI Speech (para el selector de
+// Configuración). La clave y la región van en el cuerpo y no se guardan.
+app.post("/api/voices", async (req, res) => {
+  const { azureKey, azureRegion } = req.body || {};
+  if (
+    !azureKey ||
+    !String(azureKey).trim() ||
+    !azureRegion ||
+    !String(azureRegion).trim()
+  ) {
     return res.status(400).json({
-      error: "Falta la clave de Google en Configuración.",
-      needsGoogleKey: true,
+      error: "Falta la clave o la región de Azure en Configuración.",
+      needsAzureKey: true,
     });
   }
-  let gRes;
+  let aRes;
   try {
-    gRes = await fetchWithTimeout(
-      `${GOOGLE_TTS_API}/voices?key=${encodeURIComponent(key)}`,
+    aRes = await fetchWithTimeout(
+      `${azureTtsBase(azureRegion)}/cognitiveservices/voices/list`,
       {
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Ocp-Apim-Subscription-Key": String(azureKey).trim(),
+        },
         redirect: "error",
       },
       30000
     );
   } catch (e) {
     return res.status(502).json({
-      error: "No pude hablar con Google ahora mismo.",
+      error: "No pude hablar con Azure ahora mismo.",
     });
   }
-  if (gRes.status === 400 || gRes.status === 403) {
-    return res.status(403).json({
-      error:
-        "La clave de Google no es válida o la API de Text-to-Speech no está habilitada en tu proyecto. Revísala en Configuración.",
+  if (aRes.status === 401) {
+    return res.status(401).json({
+      error: "La clave de Azure no es válida. Revísala en Configuración.",
     });
   }
-  if (!gRes.ok) {
+  if (!aRes.ok) {
     return res.status(502).json({
-      error: "Google no devolvió la lista de voces. Inténtalo de nuevo.",
+      error: "Azure no devolvió la lista de voces. Inténtalo de nuevo.",
     });
   }
-  let data = {};
+  let data = [];
   try {
-    data = await gRes.json();
+    data = await aRes.json();
   } catch (e) {
-    data = {};
+    data = [];
   }
-  const voices = Array.isArray(data.voices)
-    ? data.voices
-        .filter((v) => v && v.name)
+  // Azure devuelve un arreglo de voces: ShortName es el nombre que se
+  // usa en el SSML (p. ej. es-MX-DaliaNeural), Locale el idioma y Gender
+  // el género. Se normaliza al mismo formato que usaba el selector.
+  const voices = Array.isArray(data)
+    ? data
+        .filter((v) => v && (v.ShortName || v.Name))
         .map((v) => ({
-          name: v.name,
-          languageCodes: Array.isArray(v.languageCodes)
-            ? v.languageCodes
-            : [],
-          ssmlGender: v.ssmlGender || "",
+          name: v.ShortName || v.Name,
+          languageCodes: v.Locale ? [v.Locale] : [],
+          ssmlGender: v.Gender || "",
         }))
     : [];
   return res.json({ ok: true, voices });
