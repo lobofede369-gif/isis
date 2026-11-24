@@ -7,21 +7,28 @@ enseñan.
 
 ## Qué hace
 
-- **Voz**: toca el círculo y habla; Isis contesta por voz (Web Speech API).
-  En **Configuración** puedes elegir su voz (lista de voces en español del
-  teléfono, con botón "Probar voz"): por defecto toma la más femenina y
+- **Voz**: toca el círculo y habla; Isis contesta por voz. Con la clave
+  de Google Cloud en Configuración, habla con una voz natural de Google
+  Cloud Text-to-Speech (por defecto `es-MX-Neural2-A`, femenina, español
+  de México); sin clave, o si Google falla o se acaba el saldo, usa la
+  voz del teléfono (Web Speech API) como antes, así Isis nunca se queda
+  muda. En **Configuración** se elige su voz de Google (lista filtrada a
+  español, con botón "Probar voz") y también la voz del teléfono (lista
+  de voces en español del teléfono: por defecto toma la más femenina y
   natural disponible, en orden es-MX, es-US, es-419, es-ES, prefiriendo
-  las voces femeninas "Natural"/"Neural" de Google. Habla con el tono y
-  la velocidad de su ánimo (alegre suena más aguda y rápida; preocupada,
-  más baja y lenta; enojada o frustrada, grave y pausada) y respeta la
-  puntuación: divide cada respuesta en oraciones y hace una pausa que
-  depende de cómo termina cada una (más larga tras "!" o "?", corta tras
-  ".", con una variación pequeña para no sonar metronómica), para que las
-  comas y los puntos suenen naturales. Isis usa el nombre "Santiago" como
-  máximo una vez por respuesta, y solo cuando suena natural. Las voces son
-  las del propio teléfono (Google TTS en Android): para la más natural,
-  descarga una voz de alta calidad en español en los ajustes de texto a
-  voz del teléfono.
+  las voces femeninas "Natural"/"Neural" de Google). Con la voz del
+  teléfono, Isis habla con el tono y la velocidad de su ánimo (alegre
+  suena más aguda y rápida; preocupada, más baja y lenta; enojada o
+  frustrada, grave y pausada) y respeta la puntuación: divide cada
+  respuesta en oraciones y hace una pausa que depende de cómo termina
+  cada una (más larga tras "!" o "?", corta tras ".", con una variación
+  pequeña para no sonar metronómica), para que las comas y los puntos
+  suenen naturales. Con la voz de Google, la emoción la da la propia
+  voz. Isis usa el nombre "Santiago" como máximo una vez por respuesta,
+  y solo cuando suena natural. Las voces del teléfono son las del propio
+  teléfono (Google TTS en Android): para la más natural, descarga una
+  voz de alta calidad en español en los ajustes de texto a voz del
+  teléfono.
 - **Escucha continua ("Isis")**: con la página abierta, di "Isis" y se
   activa sin tocar nada ("Isis, ¿cómo va Orlando?" se procesa todo junto;
   si solo dices "Isis", espera tu siguiente frase). Se enciende con tu
@@ -30,6 +37,11 @@ enseñan.
   mientras la página está abierta y activa: si cierras la app o el
   navegador la pausa, no escucha.
 - **Chat con Claude**: cada mensaje llama a FableAI (`claude-sonnet-5-5`).
+  El panel de conversación es plegable y viene colapsado por defecto:
+  solo muestra la última respuesta de Isis en una línea; al tocar la
+  cabecera "Conversación" se expande y se ve el chat completo. El dock
+  (Orlando, Análisis, micrófono, Voz, Ajustes) y el campo para escribir
+  quedan siempre visibles.
 - **Orlando**: revisa en vivo las ejecuciones de n8n y si el workflow
   "WhatsApp PCN - Respuestas naturales" está activo. Sin clave de n8n,
   muestra el último dato conocido, etiquetado como tal.
@@ -73,7 +85,34 @@ enseñan.
   hace por voz: cambiar la contraseña del propietario y la recuperación
   de emergencia (se hacen a mano). La pre-cuenta y el ticket se generan
   en PDF y se abren para imprimirlos (la impresión física no existe en
-  el servidor del restaurante).
+  el servidor del restaurante). Ante un error transitorio del
+  restaurante (429/502/503), el proxy reintenta hasta 3 veces con
+  backoff (inmediato, +1 s, +2 s) y si persiste avisa en español claro.
+
+## Voz de Google Cloud
+
+Isis habla con Google Cloud Text-to-Speech, una voz mucho más natural
+que la del teléfono:
+
+1. En console.cloud.google.com crea un proyecto.
+2. Activa la **facturación con tarjeta** en ese proyecto. Google la exige
+   para activar el proyecto aunque **no se cobra nada dentro del límite
+   gratis**.
+3. Habilita la API **Cloud Text-to-Speech**.
+4. Crea una **clave API** restringida a esa API (Credentials → Create
+   Credentials → API key → restringir a Cloud Text-to-Speech API).
+5. Pega la clave en Isis, en **Configuración → Clave de Google Cloud**,
+   y guarda. En el selector de abajo elige la voz (por defecto
+   `es-MX-Neural2-A`, femenina, español de México); el botón "Probar
+   voz" la prueba con una frase cálida.
+
+**Plan gratis**: ~1 millón de caracteres al mes para las voces
+Neural2/WaveNet (4 millones para las Standard). Eso son unas 4-5 horas
+de voz al mes, muchísimo más que los 10,000 caracteres de otros
+servicios. Si se acaba el saldo, Isis lo dice y vuelve sola a la voz
+del teléfono; no se queda muda. La clave vive **solo en el navegador de
+Santiago** (localStorage), como las demás: el servidor la recibe en cada
+llamada a `/api/tts` y no la guarda.
 
 ## Memoria
 
@@ -152,6 +191,11 @@ Dentro de la app, en **Configuración**, Santiago pega una sola vez:
   Configuración. Plan gratis: 300 SMS/mes, 50/día, 1 dispositivo, sin
   tarjeta. El teléfono debe estar prendido, con señal y con TextBee activo
   cuando se mande el SMS; si está apagado o sin internet, el SMS no sale.
+- **Clave de Google Cloud** (voz natural): se crea en
+  console.cloud.google.com (proyecto → facturación con tarjeta aunque no
+  se cobra dentro del límite gratis → habilitar la API Cloud
+  Text-to-Speech → clave API restringida a esa API). Ver **Voz de Google
+  Cloud** arriba.
 
 Las claves viven **solo en el localStorage del navegador**. Nunca se
 guardan en el servidor, nunca van a ningún archivo del repo y nunca se
@@ -170,7 +214,9 @@ cada llamada y las usa solo para hablar con FableAI / n8n.
 | POST | `/api/send-whatsapp` | `{ to, message, whatsappToken }` — manda un texto por WhatsApp desde el bot |
 | POST | `/api/send-sms` | `{ to, message, textbeeKey, deviceId? }` — manda un SMS desde su número (TextBee) |
 | POST | `/api/send-sms` | `{ to, message, textbeeKey }` — manda un SMS por TextBee desde tu número |
-| POST | `/api/mitote` | `{ action, params }` — proxy a El Mitote Comandas (lista blanca; lo destructivo exige `params.confirmed: true`) |
+| POST | `/api/tts` | `{ text, googleKey, voiceName? }` — voz de Google Cloud TTS (devuelve audio en base64) |
+| GET | `/api/voices?key=` | Lista de voces de Google Cloud TTS (name, languageCodes, ssmlGender) |
+| POST | `/api/mitote` | `{ action, params }` — proxy a El Mitote Comandas (lista blanca; lo destructivo exige `params.confirmed: true`; reintenta hasta 3 veces ante 429/502/503) |
 
 ## El Mitote: conexión y token (solo en el servidor)
 
@@ -205,7 +251,9 @@ si Santiago las pide, Isis dice que se hacen a mano. Tampoco entran el
 login, el ingest de reservaciones ni los eventos en vivo. El servicio
 Free se duerme: la primera llamada puede tardar 30-60 s; el proxy usa
 timeout de 65 s y avisa cuando el restaurante estaba despertando, en vez
-de fallar en silencio.
+de fallar en silencio. Ante un error transitorio (429/502/503) reintenta
+hasta 3 veces con backoff (inmediato, +1 s, +2 s); si persiste, responde
+en español claro ("El Mitote está ocupado ahora mismo").
 
 ## Reglas
 

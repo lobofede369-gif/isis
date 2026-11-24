@@ -13,10 +13,14 @@
 //   POST /api/send-whatsapp -> { to, message, whatsappToken }
 //   POST /api/send-sms -> { to, message, textbeeKey, deviceId? } — SMS desde
 //   su propio número vía TextBee (app en su moto g13; plan gratis: 300/mes, 50/día).
+//   POST /api/tts      -> { text, googleKey, voiceName? } — voz natural
+//   de Google Cloud TTS (devuelve audio en base64; la clave nunca se guarda).
+//   GET  /api/voices   -> ?key= — lista de voces de Google.
 //   POST /api/mitote   -> { action, params } — proxy a El Mitote Comandas
 //   (el token ISIS vive SOLO en el servidor, en MITOTE_API_TOKEN; el
 //   navegador nunca lo ve). Lista blanca de acciones; lo destructivo
-//   exige confirmed:true (confirmación por voz en dos pasos).
+//   exige confirmed:true (confirmación por voz en dos pasos). Ante un
+//   429/502/503 transitorio reintenta hasta 3 veces con backoff.
 const express = require("express");
 const path = require("path");
 
@@ -36,6 +40,14 @@ const WHATSAPP_API =
 const TEXTBEE_API = "https://api.textbee.dev/api/v1/gateway/send-sms";
 // Ruta por dispositivo (cuando Santiago fija un deviceId en Configuración).
 const TEXTBEE_DEVICES = "https://api.textbee.dev/api/v1/gateway/devices";
+
+// Google Cloud Text-to-Speech — voz natural en la nube. La base se
+// puede cambiar en local con GOOGLE_TTS_API_BASE (para pruebas).
+const GOOGLE_TTS_API = (
+  process.env.GOOGLE_TTS_API_BASE || "https://texttospeech.googleapis.com/v1"
+).replace(/\/$/, "");
+// Voz de por defecto: es-MX-Neural2-A (femenina, español de México, Neural2).
+const GOOGLE_DEFAULT_VOICE = "es-MX-Neural2-A";
 
 // El Mitote Comandas — proxy servidor a servidor.
 // La base se puede cambiar en local con MITOTE_API_BASE (para pruebas);
@@ -373,6 +385,10 @@ async function fetchWithTimeout(url, options = {}, ms = 30000) {
   } finally {
     clearTimeout(timer);
   }
+}
+
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
 }
 
 // Llama a Claude Sonnet 5.5 vía FableAI (endpoint OpenAI-compatible).
@@ -914,6 +930,142 @@ app.post("/api/analyze", async (req, res) => {
 // duerme: la primera llamada puede tardar 30-60 s, por eso el timeout es
 // de 65 s y si la respuesta tarda más de MITOTE_SLOW_MS se devuelve un
 // aviso (notice) para que Santiago sepa que el restaurante despertaba.
+// ---------------------------------------------------------------- tts (Google Cloud)
+// Voz natural de Google Cloud Text-to-Speech. La clave llega por
+// parámetro y nunca se guarda (igual que fableaiKey). Plan gratis:
+// ~1 millón de caracteres/mes para las voces Neural2/WaveNet (4
+// millones para las Standard). Si no hay clave o Google falla, el
+// cliente usa la voz del teléfono como siempre.
+app.post("/api/tts", async (req, res) => {
+  const { text, googleKey, voiceName } = req.body || {};
+  if (!text || !String(text).trim()) {
+    return res.status(400).json({ error: "Escribe el texto primero." });
+  }
+  if (!googleKey || !String(googleKey).trim()) {
+    return res.status(400).json({
+      error:
+        "Falta la clave de Google en Configuración. Pégala ahí y lo intento de nuevo.",
+      needsGoogleKey: true,
+    });
+  }
+  const voice =
+    (voiceName && String(voiceName).trim()) || GOOGLE_DEFAULT_VOICE;
+  let gRes;
+  try {
+    gRes = await fetchWithTimeout(
+      `${GOOGLE_TTS_API}/text:synthesize?key=${encodeURIComponent(
+        String(googleKey).trim()
+      )}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          input: { text: String(text).trim() },
+          voice: { languageCode: "es-MX", name: voice },
+          audioConfig: {
+            audioEncoding: "MP3",
+            speakingRate: 1.0,
+            pitch: 0,
+          },
+        }),
+        // Sin redirecciones: la clave nunca debe viajar a otro host.
+        redirect: "error",
+      },
+      60000
+    );
+  } catch (e) {
+    return res.status(502).json({
+      error:
+        "No pude hablar con Google ahora mismo. Inténtalo de nuevo en un momento.",
+    });
+  }
+  let data = {};
+  try {
+    data = await gRes.json();
+  } catch (e) {
+    data = {};
+  }
+  if (gRes.ok && data.audioContent) {
+    return res.json({
+      ok: true,
+      audioBase64: data.audioContent,
+      contentType: "audio/mpeg",
+    });
+  }
+  if (gRes.status === 400 || gRes.status === 403) {
+    return res.status(403).json({
+      error:
+        "La clave de Google no es válida o la API de Text-to-Speech no está habilitada en tu proyecto. Revísala en Configuración.",
+    });
+  }
+  if (gRes.status === 429) {
+    return res.status(429).json({
+      error:
+        "Se acabó el saldo gratuito de Google. Isis seguirá hablando con la voz del teléfono.",
+    });
+  }
+  return res.status(502).json({
+    error: "Google no aceptó la voz. Inténtalo de nuevo en un momento.",
+  });
+});
+
+// Lista de voces de Google Cloud Text-to-Speech (para el selector de
+// Configuración). La clave va en la consulta y no se guarda en ningún lado.
+app.get("/api/voices", async (req, res) => {
+  const key = String(req.query.key || "").trim();
+  if (!key) {
+    return res.status(400).json({
+      error: "Falta la clave de Google en Configuración.",
+      needsGoogleKey: true,
+    });
+  }
+  let gRes;
+  try {
+    gRes = await fetchWithTimeout(
+      `${GOOGLE_TTS_API}/voices?key=${encodeURIComponent(key)}`,
+      {
+        headers: { "Content-Type": "application/json" },
+        redirect: "error",
+      },
+      30000
+    );
+  } catch (e) {
+    return res.status(502).json({
+      error: "No pude hablar con Google ahora mismo.",
+    });
+  }
+  if (gRes.status === 400 || gRes.status === 403) {
+    return res.status(403).json({
+      error:
+        "La clave de Google no es válida o la API de Text-to-Speech no está habilitada en tu proyecto. Revísala en Configuración.",
+    });
+  }
+  if (!gRes.ok) {
+    return res.status(502).json({
+      error: "Google no devolvió la lista de voces. Inténtalo de nuevo.",
+    });
+  }
+  let data = {};
+  try {
+    data = await gRes.json();
+  } catch (e) {
+    data = {};
+  }
+  const voices = Array.isArray(data.voices)
+    ? data.voices
+        .filter((v) => v && v.name)
+        .map((v) => ({
+          name: v.name,
+          languageCodes: Array.isArray(v.languageCodes)
+            ? v.languageCodes
+            : [],
+          ssmlGender: v.ssmlGender || "",
+        }))
+    : [];
+  return res.json({ ok: true, voices });
+});
 app.post("/api/mitote", async (req, res) => {
   const { action, params } = req.body || {};
   if (!action || typeof action !== "string") {
@@ -982,14 +1134,26 @@ app.post("/api/mitote", async (req, res) => {
   }
 
   const started = Date.now();
-  let up;
-  try {
-    up = await fetchWithTimeout(url, fetchOptions, MITOTE_TIMEOUT_MS);
-  } catch (e) {
-    return res.status(502).json({
-      error:
-        "No pude hablar con el servidor del restaurante. Puede estar despertando (la primera vez tarda hasta un minuto); inténtalo de nuevo en un momento.",
-    });
+  // Reintentos con backoff ante errores transitorios (429/502/503): el
+  // restaurante en plan Free a veces responde 429 un momento y luego ya
+  // contesta bien. Inmediato, +1 s, +2 s. Los 401/409/422 no se reintentan
+  // (son errores de verdad, no de carga). Un fallo de red (timeout) no se
+  // reintenta: la llamada pudo haberse ejecutado en el restaurante.
+  const RETRYABLE = new Set([429, 502, 503]);
+  let up = null;
+  let attemptsUsed = 0;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    attemptsUsed = attempt + 1;
+    if (attempt > 0) await sleep(attempt === 1 ? 1000 : 2000);
+    try {
+      up = await fetchWithTimeout(url, fetchOptions, MITOTE_TIMEOUT_MS);
+    } catch (e) {
+      return res.status(502).json({
+        error:
+          "No pude hablar con el servidor del restaurante. Puede estar despertando (la primera vez tarda hasta un minuto); inténtalo de nuevo en un momento.",
+      });
+    }
+    if (up.ok || !RETRYABLE.has(up.status)) break;
   }
   const tookMs = Date.now() - started;
   const notice =
@@ -1012,6 +1176,15 @@ app.post("/api/mitote", async (req, res) => {
       return res.status(502).json({
         error:
           "El Mitote rechazó la credencial de Isis (token inválido o revocado). Revisa MITOTE_API_TOKEN en Render.",
+      });
+    }
+    // Si se agotaron los 3 intentos ante un error transitorio, mensaje
+    // claro sin el número crudo.
+    if (RETRYABLE.has(up.status) && attemptsUsed >= 3) {
+      return res.status(502).json({
+        error:
+          "El Mitote está ocupado ahora mismo. Lo intento de nuevo en un momento.",
+        notice,
       });
     }
     if (up.status === 503) {
