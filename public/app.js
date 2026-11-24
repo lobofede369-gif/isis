@@ -12,9 +12,17 @@
   const LS_TEXTBEE = "isis_textbee_key";
   const LS_TEXTBEE_DEVICE = "isis_textbee_device";
   const LS_FACTS = "isis_facts";
+  const LS_HISTORY = "isis_history";
+  const LS_SUMMARY = "isis_summary";
   const LS_CONTACTS = "isis_contacts";
   const LS_VOICE = "isis_voice";
   const LS_WAKE = "isis_wake_enabled";
+  // Límites de la memoria: 60 hechos, 12 intercambios, resumen de ~800
+  // caracteres, 250 caracteres por lado de cada intercambio.
+  const MAX_FACTS = 60;
+  const MAX_HISTORY = 12;
+  const MAX_SUMMARY_CHARS = 800;
+  const HISTORY_SIDE_CHARS = 250;
 
   const $ = (id) => document.getElementById(id);
   const orb = $("orb");
@@ -80,8 +88,11 @@
     }
   }
   function saveFacts(facts) {
-    localStorage.setItem(LS_FACTS, JSON.stringify(facts));
+    // La lista tiene tope: si se pasa de 60, se borra el hecho más viejo.
+    const capped = Array.isArray(facts) ? facts.slice(-MAX_FACTS) : [];
+    localStorage.setItem(LS_FACTS, JSON.stringify(capped));
     renderFacts();
+    renderMemory();
   }
   function renderFacts() {
     const facts = loadFacts();
@@ -116,6 +127,197 @@
     factInput.value = "";
     addBubble("isis", "Anotado. Lo recordaré.");
   });
+
+  // ---------------------------------------------------------- memoria
+  // La memoria de Isis vive SOLO en este navegador (localStorage), como
+  // las claves y los hechos: el servidor no guarda nada. Tres partes:
+  // - hechos (isis_facts): lo que Claude aprende solo de la conversación
+  //   con [memoria: ...], más lo que Santiago le enseña a mano;
+  // - resumen (isis_summary): lo que Claude resume con [resumen: ...];
+  // - historial (isis_history): los últimos 12 intercambios, para que la
+  //   conversación se vea continuar al recargar la página.
+  function loadHistory() {
+    try {
+      const raw = localStorage.getItem(LS_HISTORY);
+      const arr = raw ? JSON.parse(raw) : [];
+      if (!Array.isArray(arr)) return [];
+      return arr.filter(
+        (h) => h && typeof h.u === "string" && typeof h.i === "string"
+      );
+    } catch (e) {
+      return [];
+    }
+  }
+  function saveHistoryItem(userText, isisText) {
+    const u = String(userText || "").trim();
+    const i = String(isisText || "").trim();
+    if (!u || !i) return;
+    const items = loadHistory();
+    items.push({
+      u: u.slice(0, HISTORY_SIDE_CHARS),
+      i: i.slice(0, HISTORY_SIDE_CHARS),
+      t: new Date().toISOString(),
+    });
+    while (items.length > MAX_HISTORY) items.shift();
+    localStorage.setItem(LS_HISTORY, JSON.stringify(items));
+    renderMemory();
+  }
+  function loadSummary() {
+    try {
+      return (localStorage.getItem(LS_SUMMARY) || "").trim();
+    } catch (e) {
+      return "";
+    }
+  }
+  function saveSummary(text) {
+    const s = String(text || "").trim().slice(0, MAX_SUMMARY_CHARS);
+    if (!s) return;
+    localStorage.setItem(LS_SUMMARY, s);
+    renderMemory();
+  }
+  // Agrega hechos nuevos sin duplicados exactos (el tope de 60 lo aplica
+  // saveFacts: si se pasa, se borra el más viejo).
+  function addFacts(newFacts) {
+    if (!Array.isArray(newFacts) || newFacts.length === 0) return;
+    const facts = loadFacts();
+    let changed = false;
+    for (const f of newFacts) {
+      const clean = String(f || "").trim();
+      if (!clean) continue;
+      if (!facts.includes(clean)) {
+        facts.push(clean);
+        changed = true;
+      }
+    }
+    if (changed) saveFacts(facts);
+  }
+  function renderMemory() {
+    const summary = loadSummary();
+    const sumEl = $("memory-summary");
+    if (sumEl) sumEl.textContent = summary || "Todavía no hay resumen.";
+    const countEl = $("memory-count");
+    if (countEl) countEl.textContent = String(loadHistory().length);
+  }
+  // Al cargar la página, la conversación se ve continuar: los últimos
+  // intercambios vuelven como burbujas. Devuelve true si restauró algo.
+  function restoreHistory() {
+    const items = loadHistory();
+    if (items.length === 0) return false;
+    for (const item of items) {
+      addBubble("user", item.u);
+      addBubble("isis", item.i, "Isis");
+    }
+    return true;
+  }
+  function showMemoryMsg(text) {
+    const el = $("memory-msg");
+    if (!el) return;
+    el.hidden = false;
+    el.textContent = text;
+  }
+  const exportMemoryBtn = $("btn-export-memory");
+  if (exportMemoryBtn) {
+    exportMemoryBtn.addEventListener("click", () => {
+      const data = {
+        facts: loadFacts(),
+        summary: loadSummary(),
+        history: loadHistory(),
+        exportedAt: new Date().toISOString(),
+      };
+      const blob = new Blob([JSON.stringify(data, null, 2)], {
+        type: "application/json",
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "isis-memoria.json";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      showMemoryMsg("Memoria exportada.");
+    });
+  }
+  const importMemoryBtn = $("btn-import-memory");
+  const memoryFileInput = $("memory-file");
+  if (importMemoryBtn && memoryFileInput) {
+    importMemoryBtn.addEventListener("click", () => memoryFileInput.click());
+    memoryFileInput.addEventListener("change", (e) => {
+      const file = e.target.files && e.target.files[0];
+      e.target.value = "";
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const data = JSON.parse(reader.result);
+          if (!data || typeof data !== "object" || Array.isArray(data)) {
+            throw new Error("bad");
+          }
+          // Si no trae ninguna de las tres partes, no es un respaldo de Isis.
+          if (!("facts" in data) && !("summary" in data) && !("history" in data)) {
+            throw new Error("bad");
+          }
+          const facts = Array.isArray(data.facts)
+            ? data.facts.filter((f) => typeof f === "string")
+            : [];
+          const summary =
+            typeof data.summary === "string" ? data.summary : "";
+          const history = Array.isArray(data.history)
+            ? data.history
+                .filter(
+                  (h) => h && typeof h.u === "string" && typeof h.i === "string"
+                )
+                .map((h) => ({
+                  u: h.u.slice(0, HISTORY_SIDE_CHARS),
+                  i: h.i.slice(0, HISTORY_SIDE_CHARS),
+                  t:
+                    typeof h.t === "string"
+                      ? h.t
+                      : new Date().toISOString(),
+                }))
+            : [];
+          localStorage.setItem(LS_FACTS, JSON.stringify(facts.slice(-MAX_FACTS)));
+          if (summary.trim()) {
+            localStorage.setItem(
+              LS_SUMMARY,
+              summary.trim().slice(0, MAX_SUMMARY_CHARS)
+            );
+          } else {
+            localStorage.removeItem(LS_SUMMARY);
+          }
+          localStorage.setItem(
+            LS_HISTORY,
+            JSON.stringify(history.slice(-MAX_HISTORY))
+          );
+          renderFacts();
+          renderMemory();
+          showMemoryMsg("Memoria importada.");
+        } catch (err) {
+          showMemoryMsg(
+            "Ese archivo no es un respaldo válido de Isis. No se borró nada."
+          );
+        }
+      };
+      reader.readAsText(file);
+    });
+  }
+  const clearMemoryBtn = $("btn-clear-memory");
+  if (clearMemoryBtn) {
+    clearMemoryBtn.addEventListener("click", () => {
+      if (
+        !window.confirm(
+          "¿Borrar la memoria de Isis? Se borran los hechos, el resumen y el historial. Tus claves, contactos y voz NO se tocan."
+        )
+      )
+        return;
+      localStorage.removeItem(LS_FACTS);
+      localStorage.removeItem(LS_HISTORY);
+      localStorage.removeItem(LS_SUMMARY);
+      renderFacts();
+      renderMemory();
+      showMemoryMsg("Memoria borrada. Isis empieza de cero.");
+    });
+  }
 
   // ---------------------------------------------------------- contactos
   // Contactos de WhatsApp (nombre + número), solo en localStorage.
@@ -228,6 +430,9 @@
   };
   const MOOD_CLASSES = Object.keys(MOODS).map((m) => "mood-" + m);
   const orbMood = $("orb-mood");
+  // El ánimo actual de Isis: lo guarda setMood y la voz lo usa para
+  // cambiar el tono y la velocidad según cómo se siente.
+  let currentMood = null;
   function extractMood(text) {
     const raw = String(text || "");
     const matches = [...raw.matchAll(/\[ánimo:\s*([a-záéíóúñ]+)\s*\]/gi)];
@@ -244,11 +449,45 @@
   }
   function setMood(mood) {
     if (!mood || !MOODS[mood] || !orbMood) return;
+    currentMood = mood;
     orbMood.hidden = false;
     orbMood.textContent = "· " + MOODS[mood] + " ·";
     orbMood.className = "orb-mood mood-" + mood;
     orb.classList.remove(...MOOD_CLASSES);
     orb.classList.add("mood-" + mood);
+  }
+
+  // Memoria que Claude devuelve en sus respuestas normales, en líneas
+  // aparte antes del marcador de ánimo: [memoria: hecho 1 | hecho 2] y
+  // [resumen: ...]. Se sacan del texto (nunca se muestran ni se hablan)
+  // y se guardan: los hechos en isis_facts, el resumen en isis_summary.
+  function extractMemory(text) {
+    const raw = String(text || "");
+    const facts = [];
+    for (const m of raw.matchAll(/\[memoria:\s*([^\]]+)\]/gi)) {
+      for (const part of m[1].split("|")) {
+        const f = part.trim();
+        if (f) facts.push(f);
+      }
+    }
+    const sumMatch = raw.match(/\[resumen:\s*([\s\S]*?)\]/i);
+    const summary = sumMatch ? sumMatch[1].trim() : null;
+    const clean = raw
+      .replace(/\[memoria:\s*[^\]]+\]/gi, "")
+      .replace(/\[resumen:\s*[\s\S]*?\]/gi, "")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+    return { text: clean, facts, summary };
+  }
+  // Limpia una respuesta de Claude: guarda lo que aprendió ([memoria:] y
+  // [resumen:]) y quita los tres marcadores ([memoria:], [resumen:] y
+  // [ánimo:]). Devuelve el texto limpio y el ánimo.
+  function processClaudeReply(raw) {
+    const mem = extractMemory(raw);
+    if (mem.facts.length) addFacts(mem.facts);
+    if (mem.summary) saveSummary(mem.summary);
+    const moodRes = extractMood(mem.text);
+    return { text: moodRes.text, mood: moodRes.mood };
   }
 
   // ---------------------------------------------------------- voz
@@ -257,26 +496,41 @@
   let recognition = null;
   let listening = false;
 
-  // --- selección de voz: la más natural en español que tenga el teléfono.
-  // Orden de preferencia: es-MX, es-US, es-419, es-ES; dentro de cada
-  // idioma, primero las voces "Natural"/"Neural" de Google. En Android las
-  // voces llegan tarde, por eso se escucha "voiceschanged" y se vuelve a
-  // leer la lista cuando están listas.
+  // --- selección de voz: la más natural y femenina en español que tenga
+  // el teléfono. El idioma manda: es-MX, es-US, es-419, es-ES; dentro de
+  // cada idioma, primero las voces femeninas, luego las "Natural"/"Neural"
+  // de Google. En Android las voces llegan tarde, por eso se escucha
+  // "voiceschanged" y se vuelve a leer la lista cuando están listas.
   let spanishVoices = [];
   let selectedVoice = null;
 
   function voiceId(v) {
     return (v.voiceURI || "") + "|" + (v.name || "") + "|" + (v.lang || "");
   }
-  function scoreVoice(v) {
+  // Orden de idioma: es-MX, es-US, es-419, es-ES, otro español. El idioma
+  // es el criterio principal, para que una voz femenina es-US no le gane
+  // a una es-MX: dentro de un mismo idioma manda la calidad.
+  function langRank(v) {
     const lang = (v.lang || "").toLowerCase();
+    if (lang === "es-mx" || lang.startsWith("es-mx")) return 0;
+    if (lang === "es-us" || lang.startsWith("es-us")) return 1;
+    if (lang === "es-419" || lang.startsWith("es-419")) return 2;
+    if (lang === "es-es" || lang.startsWith("es-es")) return 3;
+    return 4;
+  }
+  // Calidad de la voz (dentro del mismo idioma): femenina +30, natural o
+  // neural +25, Google +20. Solo se miran las palabras "female", "mujer"
+  // o "femenina" en el nombre de la voz; no se inventan nombres de
+  // personas concretas.
+  function scoreVoice(v) {
     const name = (v.name || "").toLowerCase();
     let score = 0;
-    if (lang === "es-mx" || lang.startsWith("es-mx")) score += 100;
-    else if (lang === "es-us" || lang.startsWith("es-us")) score += 80;
-    else if (lang === "es-419" || lang.startsWith("es-419")) score += 70;
-    else if (lang === "es-es" || lang.startsWith("es-es")) score += 60;
-    else if (lang.startsWith("es")) score += 40;
+    if (
+      name.includes("female") ||
+      name.includes("mujer") ||
+      name.includes("femenina")
+    )
+      score += 30;
     if (name.includes("natural") || name.includes("neural")) score += 25;
     if (name.includes("google")) score += 20;
     return score;
@@ -286,7 +540,7 @@
     const all = window.speechSynthesis.getVoices();
     spanishVoices = all
       .filter((v) => (v.lang || "").toLowerCase().startsWith("es"))
-      .sort((a, b) => scoreVoice(b) - scoreVoice(a));
+      .sort((a, b) => langRank(a) - langRank(b) || scoreVoice(b) - scoreVoice(a));
     const saved = (localStorage.getItem(LS_VOICE) || "").trim();
     selectedVoice =
       spanishVoices.find((v) => voiceId(v) === saved) ||
@@ -327,14 +581,46 @@
   }
 
   // --- hablar: se respeta la puntuación. Cada respuesta se divide en
-  // oraciones (. ! ?) y se habla una por una, con una pausa corta entre
-  // ellas, para que las comas y los puntos suenen naturales. La voz es la
-  // elegida en Configuración, con tono 1.1 y velocidad 0.95 para que suene
-  // más femenina y natural, sin atropellarse.
+  // oraciones (. ! ?) y se habla una por una, con una pausa que depende
+  // de cómo termina la oración, para que las comas y los puntos suenen
+  // naturales. La voz es la elegida en Configuración, con el tono y la
+  // velocidad del ánimo actual de Isis (alegre, enojada, preocupada...),
+  // para que las emociones se oigan como en una plática normal. El tono
+  // base es 1.2 (antes 1.1) para sonar más femenina, sin atropellarse.
   let speakQueue = [];
   let speakGen = 0;
   let speakingNow = false;
   let thinkingNow = false;
+  // Prosodia según el ánimo: pitch entre 1.0 y 1.35, rate entre 0.85 y
+  // 1.05. Sin ánimo, el tono base es 1.2 con velocidad 0.95.
+  const MOOD_PROSODY = {
+    alegre: { pitch: 1.25, rate: 1.0 },
+    bromeando: { pitch: 1.3, rate: 1.05 },
+    orgullosa: { pitch: 1.2, rate: 0.95 },
+    tranquila: { pitch: 1.15, rate: 0.9 },
+    preocupada: { pitch: 1.05, rate: 0.9 },
+    frustrada: { pitch: 1.0, rate: 0.95 },
+    enojada: { pitch: 1.0, rate: 0.95 },
+  };
+  const DEFAULT_PROSODY = { pitch: 1.2, rate: 0.95 };
+  let activeProsody = DEFAULT_PROSODY;
+  function prosodyFor(mood) {
+    return MOOD_PROSODY[mood] || DEFAULT_PROSODY;
+  }
+  // Variación pequeña por oración (±0.03) para que no suene metronómica.
+  function jitteredRate(base) {
+    const r = base + (Math.random() * 0.06 - 0.03);
+    return Math.min(1.05, Math.max(0.85, r));
+  }
+  // Pausa después de cada oración, según cómo termina: más larga tras
+  // exclamación, pregunta o puntos suspensivos; corta tras punto o coma.
+  function pauseAfter(sentence) {
+    const t = String(sentence || "").trim().replace(/["»”')\]]+$/, "");
+    const last = t.slice(-1);
+    if (last === "!" || last === "?" || last === "…") return 350;
+    if (last === "." || last === ",") return 150;
+    return 200;
+  }
   function setThinking(on) {
     thinkingNow = !!on;
     orb.classList.toggle("thinking", thinkingNow);
@@ -345,7 +631,10 @@
     const parts = clean.match(/[^.!?…]+[.!?…]["»”')]*|[^.!?…]+$/g) || [];
     return parts.map((s) => s.trim()).filter(Boolean);
   }
-  function speak(text) {
+  // speak(text, moodOverride): habla el texto con la prosodia del ánimo
+  // actual (o del ánimo que se le pase, como "alegre" para la prueba de
+  // voz). La prosodia se fija por mensaje completo, no por oración.
+  function speak(text, moodOverride) {
     if (!("speechSynthesis" in window)) return;
     const sentences = splitSentences(text);
     if (sentences.length === 0) return;
@@ -353,6 +642,7 @@
     speakGen += 1;
     const gen = speakGen;
     speakQueue = sentences;
+    activeProsody = prosodyFor(moodOverride || currentMood);
     speakNext(gen);
   }
   function speakNext(gen) {
@@ -373,15 +663,15 @@
       u.voice = voice;
       u.lang = voice.lang || "es-MX";
     }
-    u.pitch = 1.1;
-    u.rate = 0.95;
+    u.pitch = activeProsody.pitch;
+    u.rate = jitteredRate(activeProsody.rate);
     u.onstart = () => {
       speakingNow = true;
       orb.classList.add("speaking");
       orb.classList.remove("listening");
     };
-    u.onend = () => setTimeout(() => speakNext(gen), 200);
-    u.onerror = () => setTimeout(() => speakNext(gen), 200);
+    u.onend = () => setTimeout(() => speakNext(gen), pauseAfter(sentence));
+    u.onerror = () => setTimeout(() => speakNext(gen), pauseAfter(sentence));
     window.speechSynthesis.speak(u);
   }
   function setOrbStatus(text) {
@@ -654,6 +944,21 @@
     return div;
   }
 
+  // El último mensaje que escribió Santiago: lo usa el historial para
+  // guardar cada intercambio (lo que él dijo + lo último que Isis le
+  // mostró y le dijo). Se fija al inicio de sendMessage.
+  let lastUserText = "";
+  // Mensaje final de un turno: burbuja + voz + se guarda en el historial.
+  function sayFinal(tag, msg) {
+    addBubble("isis", msg, tag);
+    speak(msg);
+    recordExchange(msg);
+  }
+  function recordExchange(isisText) {
+    if (!lastUserText || !String(isisText || "").trim()) return;
+    saveHistoryItem(lastUserText, String(isisText).trim());
+  }
+
   function isWeatherQuestion(text) {
     return /clima|tiempo|temperatura|llover|lluvia|lloviendo|va a llover|hace (fr[ií]o|calor)|paraguas|nublado|soleado/i.test(
       text
@@ -681,96 +986,149 @@
       if (!res.ok || !data.live) {
         const msg =
           data.error || "No pude consultar el clima ahora mismo.";
-        addBubble("isis", msg, "Clima");
-        speak(msg);
+        sayFinal("Clima", msg);
         return;
       }
-      const msg = data.summary;
-      addBubble("isis", msg, "Clima · en vivo");
-      speak(msg);
+      sayFinal("Clima · en vivo", data.summary);
     } catch (e) {
-      const msg = "No pude consultar el clima ahora mismo.";
-      addBubble("isis", msg, "Clima");
-      speak(msg);
+      sayFinal("Clima", "No pude consultar el clima ahora mismo.");
     }
   }
 
   // La respuesta de Claude para mandar un mensaje es solo un JSON:
   // {"action":"send_whatsapp","to":"...","message":"..."} o
-  // {"action":"send_sms","to":"...","message":"..."}
+  // {"action":"send_sms","to":"...","message":"..."}. Pero Claude a veces
+  // escribe texto antes del JSON ("Claro, le escribo..."), así que el
+  // JSON se busca EN CUALQUIER PARTE de la respuesta, no solo al inicio:
+  // se extrae el primer objeto {...} balanceado que sea una acción válida.
+  // Encuentra el primer objeto JSON balanceado {...} a partir de `from`,
+  // respetando cadenas "..." (con escapes). Devuelve { obj, json, start,
+  // end } o null. Si el objeto no es JSON válido, se sigue buscando desde
+  // el siguiente "{".
+  function findJsonObject(text, from) {
+    const s = String(text || "");
+    for (let start = from || 0; start < s.length; start++) {
+      if (s[start] !== "{") continue;
+      let depth = 0;
+      let inStr = false;
+      let esc = false;
+      for (let i = start; i < s.length; i++) {
+        const ch = s[i];
+        if (inStr) {
+          if (esc) esc = false;
+          else if (ch === "\\") esc = true;
+          else if (ch === '"') inStr = false;
+          continue;
+        }
+        if (ch === '"') inStr = true;
+        else if (ch === "{") depth++;
+        else if (ch === "}") {
+          depth--;
+          if (depth === 0) {
+            const json = s.slice(start, i + 1);
+            try {
+              return { obj: JSON.parse(json), json, start, end: i + 1 };
+            } catch (e) {
+              break; // no era JSON válido; probar desde el siguiente "{"
+            }
+          }
+        }
+      }
+    }
+    return null;
+  }
+  // Busca en el texto la primera acción válida (según isValid) dentro de
+  // un objeto JSON, esté donde esté: al inicio, después de texto, o dentro
+  // de un bloque ```json. Devuelve { action, json, start, end } o null.
+  function findAction(text, isValid) {
+    const s = String(text || "");
+    let offset = 0;
+    while (offset < s.length) {
+      const found = findJsonObject(s, offset);
+      if (!found) return null;
+      if (isValid(found.obj)) {
+        return {
+          action: found.obj,
+          json: found.json,
+          start: found.start,
+          end: found.end,
+        };
+      }
+      offset = found.end;
+    }
+    return null;
+  }
+  // Quita el JSON de acción del texto que se muestra y se habla. Si tras
+  // quitarlo no queda texto con sentido, devuelve "".
+  function stripActionJson(text, found) {
+    if (!found) return String(text || "").trim();
+    const rest = (
+      String(text).slice(0, found.start) + String(text).slice(found.end)
+    )
+      .replace(/```(?:json)?/gi, "")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+    return rest;
+  }
+  function hasMeaningfulText(t) {
+    return /[A-Za-zÁÉÍÓÚÜÑáéíóúüñ0-9]{2,}/.test(String(t || ""));
+  }
   function parseSendAction(reply) {
     if (!reply) return null;
-    let text = String(reply).trim();
-    // Por si Claude le pegó el marcador de ánimo al JSON, se quita antes.
-    text = text.replace(/\[ánimo:\s*[a-záéíóúñ]+\s*\]/gi, "").trim();
-    // Por si Claude lo envuelve en un bloque de código.
-    const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-    if (fenced) text = fenced[1].trim();
-    if (!text.startsWith("{")) return null;
-    try {
-      const parsed = JSON.parse(text);
-      if (
-        parsed &&
-        (parsed.action === "send_whatsapp" || parsed.action === "send_sms") &&
-        typeof parsed.to === "string" &&
-        typeof parsed.message === "string"
-      ) {
-        return parsed;
-      }
-      return null;
-    } catch (e) {
-      return null;
-    }
+    const text = String(reply)
+      .replace(/\[ánimo:\s*[a-záéíóúñ]+\s*\]/gi, "")
+      .trim();
+    return findAction(
+      text,
+      (o) =>
+        o &&
+        (o.action === "send_whatsapp" || o.action === "send_sms") &&
+        typeof o.to === "string" &&
+        typeof o.message === "string"
+    );
   }
 
   // La respuesta de Claude para operar El Mitote es solo un JSON:
   // {"action":"mitote","mitote_action":"<nombre>","params":{...}} o
   // {"action":"mitote_confirm","summary":"...","mitote_action":"<nombre>","params":{...}}
+  // Igual que con los mensajes: el JSON se busca en cualquier parte de la
+  // respuesta, porque Claude a veces escribe texto antes.
   function parseMitoteAction(reply) {
     if (!reply) return null;
-    let text = String(reply).trim();
-    text = text.replace(/\[ánimo:\s*[a-záéíóúñ]+\s*\]/gi, "").trim();
-    const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-    if (fenced) text = fenced[1].trim();
-    if (!text.startsWith("{")) return null;
-    try {
-      const parsed = JSON.parse(text);
-      if (
-        parsed &&
-        (parsed.action === "mitote" || parsed.action === "mitote_confirm") &&
-        typeof parsed.mitote_action === "string" &&
-        parsed.mitote_action.trim()
-      ) {
-        return parsed;
-      }
-      return null;
-    } catch (e) {
-      return null;
-    }
+    const text = String(reply)
+      .replace(/\[ánimo:\s*[a-záéíóúñ]+\s*\]/gi, "")
+      .trim();
+    return findAction(
+      text,
+      (o) =>
+        o &&
+        (o.action === "mitote" || o.action === "mitote_confirm") &&
+        typeof o.mitote_action === "string" &&
+        o.mitote_action.trim()
+    );
   }
 
   async function handleSendSms(action) {
     const to = String(action.to || "").trim();
     const message = String(action.message || "").trim();
     if (!message) {
-      const msg = "¿Qué le escribo por SMS? Dime el mensaje y lo mando.";
-      addBubble("isis", msg, "SMS");
-      speak(msg);
+      sayFinal("SMS", "¿Qué le escribo por SMS? Dime el mensaje y lo mando.");
       return;
     }
     const recipient = resolveRecipient(to);
     if (!recipient) {
-      const msg = `No tengo el número de ${to || "esa persona"}. Dime su número o agrégalo en Contactos y lo intento de nuevo.`;
-      addBubble("isis", msg, "SMS");
-      speak(msg);
+      sayFinal(
+        "SMS",
+        `No tengo el número de ${to || "esa persona"}. Dime su número o agrégalo en Contactos y lo intento de nuevo.`
+      );
       return;
     }
     const { textbeeKey, textbeeDevice } = getKeys();
     if (!textbeeKey) {
-      const msg =
-        "Falta la clave de TextBee en Configuración. Pégala ahí y lo intento de nuevo.";
-      addBubble("isis", msg, "SMS");
-      speak(msg);
+      sayFinal(
+        "SMS",
+        "Falta la clave de TextBee en Configuración. Pégala ahí y lo intento de nuevo."
+      );
       return;
     }
     setOrbStatus("Isis está escribiendo…");
@@ -782,18 +1140,15 @@
         textbeeDevice: textbeeDevice || undefined,
       });
       if (ok && data.ok) {
-        const msg = `Listo, le mandé el SMS a ${recipient.name} desde tu número: ${message}`;
-        addBubble("isis", msg, "SMS · enviado");
-        speak(msg);
+        sayFinal(
+          "SMS · enviado",
+          `Listo, le mandé el SMS a ${recipient.name} desde tu número: ${message}`
+        );
       } else {
-        const msg = data.error || "No pude mandar el SMS.";
-        addBubble("isis", msg, "SMS");
-        speak(msg);
+        sayFinal("SMS", data.error || "No pude mandar el SMS.");
       }
     } catch (e) {
-      const msg = "No pude hablar con el servidor ahora mismo.";
-      addBubble("isis", msg, "SMS");
-      speak(msg);
+      sayFinal("SMS", "No pude hablar con el servidor ahora mismo.");
     }
     setOrbStatus(idleStatus());
   }
@@ -802,24 +1157,23 @@
     const to = String(action.to || "").trim();
     const message = String(action.message || "").trim();
     if (!message) {
-      const msg = "¿Qué le escribo? Dime el mensaje y lo mando.";
-      addBubble("isis", msg, "WhatsApp");
-      speak(msg);
+      sayFinal("WhatsApp", "¿Qué le escribo? Dime el mensaje y lo mando.");
       return;
     }
     const recipient = resolveRecipient(to);
     if (!recipient) {
-      const msg = `No tengo el número de ${to || "esa persona"}. Dime su número o agrégalo en Contactos y lo intento de nuevo.`;
-      addBubble("isis", msg, "WhatsApp");
-      speak(msg);
+      sayFinal(
+        "WhatsApp",
+        `No tengo el número de ${to || "esa persona"}. Dime su número o agrégalo en Contactos y lo intento de nuevo.`
+      );
       return;
     }
     const { whatsappToken } = getKeys();
     if (!whatsappToken) {
-      const msg =
-        "Falta el token de WhatsApp en Configuración. Pégalo ahí y lo intento de nuevo.";
-      addBubble("isis", msg, "WhatsApp");
-      speak(msg);
+      sayFinal(
+        "WhatsApp",
+        "Falta el token de WhatsApp en Configuración. Pégalo ahí y lo intento de nuevo."
+      );
       return;
     }
     setOrbStatus("Isis está escribiendo…");
@@ -830,18 +1184,15 @@
         whatsappToken,
       });
       if (ok && data.ok) {
-        const msg = `Listo, le escribí a ${recipient.name}: ${message}`;
-        addBubble("isis", msg, "WhatsApp · enviado");
-        speak(msg);
+        sayFinal(
+          "WhatsApp · enviado",
+          `Listo, le escribí a ${recipient.name}: ${message}`
+        );
       } else {
-        const msg = data.error || "No pude mandar el mensaje.";
-        addBubble("isis", msg, "WhatsApp");
-        speak(msg);
+        sayFinal("WhatsApp", data.error || "No pude mandar el mensaje.");
       }
     } catch (e) {
-      const msg = "No pude hablar con el servidor ahora mismo.";
-      addBubble("isis", msg, "WhatsApp");
-      speak(msg);
+      sayFinal("WhatsApp", "No pude hablar con el servidor ahora mismo.");
     }
     setOrbStatus(idleStatus());
   }
@@ -883,6 +1234,7 @@
     const ask = `Voy a ${action.summary || action.mitote_action}. ¿Confirmas?`;
     addBubble("isis", ask, "El Mitote · confirmar");
     speak(ask);
+    recordExchange(ask);
     setOrbStatus("Te espero: ¿confirmas?");
   }
 
@@ -897,9 +1249,10 @@
   async function runMitoteChain(fableaiKey, originalText, firstAction, firstParams, depth) {
     const step = depth || 0;
     if (step >= 6) {
-      const msg = "Ya hice varios pasos en El Mitote, mejor revisamos juntos qué falta.";
-      addBubble("isis", msg, "El Mitote");
-      speak(msg);
+      sayFinal(
+        "El Mitote",
+        "Ya hice varios pasos en El Mitote, mejor revisamos juntos qué falta."
+      );
       return;
     }
     setOrbStatus("Isis está trabajando en El Mitote…");
@@ -915,9 +1268,7 @@
     }
     const d = result.data || {};
     if (!result.ok) {
-      const msg = d.error || "El Mitote no aceptó esa acción.";
-      addBubble("isis", msg, "El Mitote");
-      speak(msg);
+      sayFinal("El Mitote", d.error || "El Mitote no aceptó esa acción.");
       setOrbStatus(idleStatus());
       return;
     }
@@ -951,6 +1302,7 @@
     // Sin clave de Claude no hay cadena: se habla el resumen y listo.
     if (!fableaiKey) {
       speak(note + summary);
+      recordExchange(note + summary);
       setOrbStatus(idleStatus());
       return;
     }
@@ -964,16 +1316,27 @@
         message: followUp,
         fableaiKey,
         facts: loadFacts(),
+        history: loadHistory().map((h) => ({ u: h.u, i: h.i })),
+        summary: loadSummary(),
       });
       if (!chatRes.ok || !chatRes.data.reply) {
         speak(note + summary);
+        recordExchange(note + summary);
         setOrbStatus(idleStatus());
         return;
       }
-      const { text: cleanReply, mood } = extractMood(chatRes.data.reply);
+      const { text: cleanReply, mood } = processClaudeReply(chatRes.data.reply);
       if (mood) setMood(mood);
-      const next = parseMitoteAction(cleanReply);
-      if (next) {
+      const nextFound = parseMitoteAction(cleanReply);
+      if (nextFound) {
+        // Claude escribió texto antes del JSON: se muestra el texto sin el
+        // JSON y luego se ejecuta la acción.
+        const rest = stripActionJson(cleanReply, nextFound);
+        if (hasMeaningfulText(rest)) {
+          addBubble("isis", rest, "Isis");
+          speak(rest);
+        }
+        const next = nextFound.action;
         if (next.action === "mitote_confirm") {
           storeMitoteConfirm(next, fableaiKey, originalText);
         } else {
@@ -982,14 +1345,17 @@
       } else {
         addBubble("isis", cleanReply, "Isis");
         speak(cleanReply);
+        recordExchange(cleanReply);
       }
     } catch (e) {
       speak(note + summary);
+      recordExchange(note + summary);
     }
     if (!pendingMitote) setOrbStatus(idleStatus());
   }
 
   async function sendMessage(text) {
+    lastUserText = text;
     addBubble("user", text);
     chatInput.value = "";
 
@@ -1007,9 +1373,7 @@
         return;
       }
       if (isNegative(text)) {
-        const msg = "Listo, no lo hago.";
-        addBubble("isis", msg, "El Mitote");
-        speak(msg);
+        sayFinal("El Mitote", "Listo, no lo hago.");
         setOrbStatus(idleStatus());
         setTimeout(maybeStartWake, 1200);
         return;
@@ -1051,23 +1415,39 @@
         fableaiKey,
         n8nKey,
         facts: extraFacts,
+        history: loadHistory().map((h) => ({ u: h.u, i: h.i })),
+        summary: loadSummary(),
       });
       if (!ok && data.error) {
         addBubble("isis", data.error, "Isis");
         speak(data.error);
+        recordExchange(data.error);
       } else if (data.reply) {
-        // El marcador de ánimo no se muestra en el chat ni se lee en voz alta.
-        const { text: cleanReply, mood } = extractMood(data.reply);
+        // Los marcadores ([memoria:], [resumen:], [ánimo:]) no se muestran
+        // en el chat ni se leen en voz alta; lo aprendido se guarda.
+        const { text: cleanReply, mood } = processClaudeReply(data.reply);
         if (mood) setMood(mood);
-        const action = parseSendAction(cleanReply);
-        if (action) {
-          // Claude pidió mandar un mensaje: se ejecuta, nunca se muestra el JSON.
+        const sendFound = parseSendAction(cleanReply);
+        if (sendFound) {
+          // Claude escribió texto antes del JSON: se muestra el texto sin
+          // el JSON y luego se ejecuta el envío.
+          const rest = stripActionJson(cleanReply, sendFound);
+          if (hasMeaningfulText(rest)) {
+            addBubble("isis", rest, "Isis");
+            speak(rest);
+          }
+          const action = sendFound.action;
           if (action.action === "send_sms") await handleSendSms(action);
           else await handleSendWhatsapp(action);
         } else {
-          const mitote = parseMitoteAction(cleanReply);
-          if (mitote) {
-            // Claude pidió operar El Mitote: se ejecuta la cadena de pasos.
+          const mitoteFound = parseMitoteAction(cleanReply);
+          if (mitoteFound) {
+            const rest = stripActionJson(cleanReply, mitoteFound);
+            if (hasMeaningfulText(rest)) {
+              addBubble("isis", rest, "Isis");
+              speak(rest);
+            }
+            const mitote = mitoteFound.action;
             if (mitote.action === "mitote_confirm") {
               storeMitoteConfirm(mitote, fableaiKey, text);
             } else {
@@ -1076,16 +1456,19 @@
           } else {
             addBubble("isis", cleanReply, data.claudeLive ? "Isis · Claude en vivo" : "Isis");
             speak(cleanReply);
+            recordExchange(cleanReply);
           }
         }
         if (data.needsKey) refreshKeyUI();
       } else {
         addBubble("isis", "No pude responder ahora mismo.", "Isis");
+        recordExchange("No pude responder ahora mismo.");
       }
     } catch (e) {
       const msg = "No pude hablar con el servidor ahora mismo.";
       addBubble("isis", msg, "Isis");
       speak(msg);
+      recordExchange(msg);
     }
     setThinking(false);
     orb.classList.remove("listening");
@@ -1151,12 +1534,16 @@
         fableaiKey,
         n8nKey,
         facts: loadFacts(),
+        summary: loadSummary(),
       });
       if (!ok && data.error) {
         analysisBox.innerHTML = `<p>${escapeHtml(data.error)}</p>`;
         return;
       }
-      const { text: cleanAnalysis, mood } = extractMood(data.analysis || "");
+      // Por si Claude devuelve marcadores en el análisis, se quitan de
+      // la pantalla (aquí no se guarda memoria: no es una conversación).
+      const mem = extractMemory(data.analysis || "");
+      const { text: cleanAnalysis, mood } = extractMood(mem.text);
       if (mood) setMood(mood);
       analysisBox.textContent = cleanAnalysis || "Sin análisis.";
     } catch (e) {
@@ -1229,7 +1616,10 @@
   if (testVoiceBtn) {
     testVoiceBtn.addEventListener("click", () => {
       stopWake(); // que no se escuche a sí misma y se active sola
-      speak("Hola, soy Isis. ¿Cómo va tu día? Me da gusto hablar contigo.");
+      speak(
+        "¡Hola, Santiago! Me da mucho gusto verte, ¿en qué te ayudo hoy?",
+        "alegre"
+      );
     });
   }
 
@@ -1237,6 +1627,7 @@
   refreshKeyUI();
   renderFacts();
   renderContacts();
+  renderMemory();
   loadOrlando();
   // Las voces del teléfono llegan tarde en Android: se escucha el evento.
   if ("speechSynthesis" in window) {
@@ -1271,9 +1662,13 @@
   if (dockConfig) {
     dockConfig.addEventListener("click", () => toggleConfig());
   }
-  addBubble(
-    "isis",
-    "Hola, soy Isis. Tócame el círculo y háblame, o escríbeme abajo. Si me preguntas por Orlando, lo reviso; si me preguntas por el clima, lo consulto en vivo; si me pides que le escriba a alguien, lo mando por SMS desde tu número (o por WhatsApp si me lo pides así); y si me pides algo del restaurante, lo opero como dueña en El Mitote.",
-    "Isis"
-  );
+  // Si hay conversación guardada, la conversación se ve continuar y no
+  // se repite el saludo; si no hay nada, Isis se presenta como siempre.
+  if (!restoreHistory()) {
+    addBubble(
+      "isis",
+      "Hola, soy Isis. Tócame el círculo y háblame, o escríbeme abajo. Si me preguntas por Orlando, lo reviso; si me preguntas por el clima, lo consulto en vivo; si me pides que le escriba a alguien, lo mando por SMS desde tu número (o por WhatsApp si me lo pides así); y si me pides algo del restaurante, lo opero como dueña en El Mitote.",
+      "Isis"
+    );
+  }
 })();

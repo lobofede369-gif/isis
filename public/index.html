@@ -140,6 +140,18 @@
         <input id="fact-input" type="text" placeholder="Enséñale algo a Isis…" autocomplete="off" />
         <button type="submit" class="small-btn">Enseñar</button>
       </form>
+      <div class="memory-section">
+        <h3>Memoria</h3>
+        <p id="memory-summary" class="muted">Todavía no hay resumen.</p>
+        <p class="muted">Intercambios guardados: <span id="memory-count">0</span> de 12.</p>
+        <div class="memory-actions">
+          <button id="btn-export-memory" class="small-btn" type="button">Exportar memoria</button>
+          <button id="btn-import-memory" class="small-btn" type="button">Importar memoria</button>
+          <input id="memory-file" type="file" accept="application/json,.json" hidden />
+          <button id="btn-clear-memory" class="small-btn danger" type="button">Borrar memoria</button>
+        </div>
+        <p id="memory-msg" class="config-msg" hidden></p>
+      </div>
     </section>
 
     <!-- Contactos -->

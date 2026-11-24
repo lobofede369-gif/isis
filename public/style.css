@@ -467,6 +467,18 @@ main { max-width: 640px; margin: 0 auto; padding: 8px 16px 32px; position: relat
 }
 .fact-form { display: flex; gap: 8px; }
 
+/* Memoria: resumen, contador y botones de respaldo */
+.memory-section { margin-top: 16px; padding-top: 14px; border-top: 1px solid rgba(0, 212, 255, 0.18); }
+.memory-section h3 {
+  margin: 0 0 8px;
+  font-family: var(--font-display);
+  font-size: 0.8rem; font-weight: 700; letter-spacing: 2.5px; text-transform: uppercase;
+  color: var(--neon-bright);
+  text-shadow: 0 0 12px rgba(0, 212, 255, 0.5);
+}
+.memory-section p { margin: 6px 0; }
+.memory-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+
 /* Contactos: dos campos que se acomodan en móvil */
 .contact-form { flex-wrap: wrap; }
 .contact-form input { min-width: 140px; }
