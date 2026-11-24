@@ -1,0 +1,1 @@
+{"dependencies":{"express":"^4.19.2"},"description":"Isis — asistente personal por voz de Santiago. Cerebro Claude Sonnet 5.5 vía FableAI.","engines":{"node":">=18"},"main":"server.js","name":"isis","private":true,"scripts":{"start":"node server.js"},"version":"1.0.0"}
