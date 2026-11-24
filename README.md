@@ -64,11 +64,13 @@ la pantalla principal se reubicó dentro del menú.
   mientras la página está abierta y activa: si cierras la app o el
   navegador la pausa, no escucha.
 - **Chat con Claude**: cada mensaje llama a FableAI (`claude-sonnet-5-5`).
-  El panel de conversación es plegable y viene colapsado por defecto:
-  solo muestra la última respuesta de Isis en una línea; al tocar la
-  cabecera "Conversación" se expande y se ve el chat completo. El dock
-  mínimo (escribir + enviar + micrófono) queda siempre visible; todo
-  lo demás vive en el botón hamburguesa ☰ (ver **Interfaz**).
+  La conversación vive en una tarjeta estilo JARVIS (bordes redondeados,
+  brillo cian) y viene colapsada por defecto: muestra "→" + la última
+  respuesta de Isis en una línea y la pista "Toca para expandir la
+  conversación"; al tocar la tarjeta se expande y se ve el chat completo
+  (burbujas redondeadas). El dock mínimo (escribir + enviar + micrófono)
+  queda siempre visible; todo lo demás vive en el botón hamburguesa ☰
+  (ver **Interfaz**).
 - **Orlando**: revisa en vivo las ejecuciones de n8n y si el workflow
   "WhatsApp PCN - Respuestas naturales" está activo. Sin clave de n8n,
   muestra el último dato conocido, etiquetado como tal.
