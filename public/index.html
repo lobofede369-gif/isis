@@ -34,6 +34,7 @@
         <span class="orb-core">🎙️</span>
       </button>
       <p id="orb-status" class="orb-status">Toca el círculo para hablar</p>
+      <p id="orb-mood" class="orb-mood" hidden></p>
       <p id="voice-note" class="voice-note" hidden></p>
     </section>
 
@@ -87,6 +88,18 @@
       </form>
     </section>
 
+    <!-- Contactos -->
+    <section class="card">
+      <h2>Contactos</h2>
+      <ul id="contacts-list" class="facts-list"></ul>
+      <form id="contact-form" class="fact-form contact-form">
+        <input id="contact-name" type="text" placeholder="Nombre (ej. Griselda)" autocomplete="off" />
+        <input id="contact-phone" type="tel" placeholder="Número (ej. 56 2375 0929)" autocomplete="off" />
+        <button type="submit" class="small-btn">Agregar</button>
+      </form>
+      <p class="hint">Isis usa estos contactos cuando le pides que le escriba a alguien por WhatsApp o por SMS desde tu número.</p>
+    </section>
+
     <!-- Configuración -->
     <section id="config" class="card config" hidden>
       <h2>Configuración</h2>
@@ -104,6 +117,21 @@
         <input id="cfg-n8n" type="password" placeholder="Pégala aquí…" autocomplete="off" />
         <span id="cfg-n8n-state" class="field-state">Sin guardar</span>
       </label>
+      <label class="field">
+        <span>Token de WhatsApp (para mandar mensajes por el bot)</span>
+        <input id="cfg-whatsapp" type="password" placeholder="Pégalo aquí…" autocomplete="off" />
+        <span id="cfg-whatsapp-state" class="field-state">Sin guardar</span>
+      </label>
+      <label class="field">
+        <span>Clave de TextBee (para mandar SMS desde tu número)</span>
+        <input id="cfg-textbee" type="password" placeholder="Pégala aquí…" autocomplete="off" />
+        <span id="cfg-textbee-state" class="field-state">Sin guardar</span>
+      </label>
+      <label class="field">
+        <span>ID del dispositivo TextBee (opcional, para fijar tu teléfono)</span>
+        <input id="cfg-textbee-device" type="text" placeholder="Pégalo aquí… (puedes dejarlo vacío)" autocomplete="off" />
+        <span id="cfg-textbee-device-state" class="field-state">Sin guardar (opcional)</span>
+      </label>
       <div class="config-actions">
         <button id="btn-save-config" class="primary-btn">Guardar claves</button>
         <button id="btn-clear-config" class="small-btn danger">Borrar claves</button>
@@ -112,6 +140,8 @@
       <p class="muted small">
         La clave de FableAI se crea en el panel de FableAI (API Keys).
         La clave de API de n8n se crea en n8n → Settings → n8n API.
+        El token de WhatsApp se consigue en Meta for Developers → tu app «PCN Bot» → WhatsApp → API Setup → Token de acceso.
+        La clave de TextBee y el ID del dispositivo se consiguen en textbee.dev: crea una cuenta, instala la app en tu teléfono, agrega el dispositivo escaneando el QR y crea una API key. Sin el ID, Isis usa tu dispositivo por defecto.
       </p>
     </section>
   </main>

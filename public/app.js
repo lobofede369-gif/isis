@@ -8,7 +8,11 @@
 
   const LS_FABLEAI = "isis_fableai_key";
   const LS_N8N = "isis_n8n_key";
+  const LS_WHATSAPP = "isis_whatsapp_token";
+  const LS_TEXTBEE = "isis_textbee_key";
+  const LS_TEXTBEE_DEVICE = "isis_textbee_device";
   const LS_FACTS = "isis_facts";
+  const LS_CONTACTS = "isis_contacts";
 
   const $ = (id) => document.getElementById(id);
   const orb = $("orb");
@@ -30,17 +34,36 @@
     return {
       fableaiKey: (localStorage.getItem(LS_FABLEAI) || "").trim(),
       n8nKey: (localStorage.getItem(LS_N8N) || "").trim(),
+      whatsappToken: (localStorage.getItem(LS_WHATSAPP) || "").trim(),
+      textbeeKey: (localStorage.getItem(LS_TEXTBEE) || "").trim(),
+      textbeeDevice: (localStorage.getItem(LS_TEXTBEE_DEVICE) || "").trim(),
     };
   }
 
   function refreshKeyUI() {
-    const { fableaiKey, n8nKey } = getKeys();
+    const { fableaiKey, n8nKey, whatsappToken, textbeeKey, textbeeDevice } =
+      getKeys();
     const fState = $("cfg-fableai-state");
     const nState = $("cfg-n8n-state");
+    const wState = $("cfg-whatsapp-state");
+    const tState = $("cfg-textbee-state");
+    const dState = $("cfg-textbee-device-state");
     fState.textContent = fableaiKey ? "Guardada ✓" : "Sin guardar";
     fState.classList.toggle("ok", !!fableaiKey);
     nState.textContent = n8nKey ? "Guardada ✓" : "Sin guardar";
     nState.classList.toggle("ok", !!n8nKey);
+    wState.textContent = whatsappToken ? "Guardado ✓" : "Sin guardar";
+    wState.classList.toggle("ok", !!whatsappToken);
+    if (tState) {
+      tState.textContent = textbeeKey ? "Guardada ✓" : "Sin guardar";
+      tState.classList.toggle("ok", !!textbeeKey);
+    }
+    if (dState) {
+      dState.textContent = textbeeDevice
+        ? "Guardado ✓"
+        : "Sin guardar (opcional)";
+      dState.classList.toggle("ok", !!textbeeDevice);
+    }
     keyBanner.hidden = !!fableaiKey;
   }
 
@@ -91,6 +114,140 @@
     factInput.value = "";
     addBubble("isis", "Anotado. Lo recordaré.");
   });
+
+  // ---------------------------------------------------------- contactos
+  // Contactos de WhatsApp (nombre + número), solo en localStorage.
+  function loadContacts() {
+    try {
+      const raw = localStorage.getItem(LS_CONTACTS);
+      const arr = raw ? JSON.parse(raw) : [];
+      if (!Array.isArray(arr)) return [];
+      return arr.filter(
+        (c) =>
+          c &&
+          typeof c.name === "string" &&
+          typeof c.phone === "string" &&
+          c.name.trim() &&
+          c.phone.trim()
+      );
+    } catch (e) {
+      return [];
+    }
+  }
+  function saveContacts(contacts) {
+    localStorage.setItem(LS_CONTACTS, JSON.stringify(contacts));
+    renderContacts();
+  }
+  function renderContacts() {
+    const list = $("contacts-list");
+    const contacts = loadContacts();
+    list.innerHTML = "";
+    if (contacts.length === 0) {
+      const li = document.createElement("li");
+      li.innerHTML =
+        "<span class='muted'>Sin contactos todavía. Agrega a quién le quieras escribir por SMS o por WhatsApp.</span>";
+      list.appendChild(li);
+      return;
+    }
+    contacts.forEach((contact, i) => {
+      const li = document.createElement("li");
+      const span = document.createElement("span");
+      span.textContent = `${contact.name} · ${contact.phone}`;
+      const btn = document.createElement("button");
+      btn.textContent = "✕";
+      btn.title = "Borrar contacto";
+      btn.addEventListener("click", () => {
+        const next = loadContacts().filter((_, j) => j !== i);
+        saveContacts(next);
+      });
+      li.appendChild(span);
+      li.appendChild(btn);
+      list.appendChild(li);
+    });
+  }
+  $("contact-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const name = $("contact-name").value.trim();
+    const phone = $("contact-phone").value.trim();
+    if (!name || !phone) return;
+    const contacts = loadContacts();
+    const idx = contacts.findIndex(
+      (c) => c.name.toLowerCase() === name.toLowerCase()
+    );
+    if (idx >= 0) contacts[idx].phone = phone;
+    else contacts.push({ name, phone });
+    saveContacts(contacts);
+    $("contact-name").value = "";
+    $("contact-phone").value = "";
+    addBubble("isis", `Listo, guardé a ${name} en tus contactos.`);
+  });
+
+  // Normaliza un número de México a 52 + 10 dígitos. Devuelve null si no se puede.
+  function normalizeMxPhone(input) {
+    if (!input) return null;
+    const digits = String(input).replace(/\D/g, "");
+    if (digits.length === 13 && digits.startsWith("521")) {
+      return "52" + digits.slice(3);
+    }
+    if (digits.length === 12 && digits.startsWith("52")) return digits;
+    if (digits.length === 10) return "52" + digits;
+    return null;
+  }
+  // Resuelve a quién escribir: un nombre de contacto o un número directo.
+  // Devuelve { name, number } o null si no se puede resolver.
+  function resolveRecipient(to) {
+    const raw = String(to || "").trim();
+    if (!raw) return null;
+    const byName = loadContacts().find(
+      (c) => c.name.toLowerCase() === raw.toLowerCase()
+    );
+    if (byName) {
+      const number = normalizeMxPhone(byName.phone);
+      return number ? { name: byName.name, number } : null;
+    }
+    const number = normalizeMxPhone(raw);
+    if (number) return { name: raw, number };
+    return null;
+  }
+
+  // ---------------------------------------------------------- ánimo
+  // El ánimo de Isis: Claude lo marca al final de sus respuestas con
+  // [ánimo: ...]. El cliente lo quita del texto (no se lee en voz alta) y
+  // lo muestra como una línea pequeña junto al orbe, con un leve cambio
+  // de tono del orbe.
+  const MOODS = {
+    alegre: "Alegre",
+    frustrada: "Frustrada",
+    enojada: "Enojada",
+    preocupada: "Preocupada",
+    orgullosa: "Orgullosa",
+    bromeando: "Bromeando",
+    tranquila: "Tranquila",
+  };
+  const MOOD_CLASSES = Object.keys(MOODS).map((m) => "mood-" + m);
+  const orbMood = $("orb-mood");
+  function extractMood(text) {
+    const raw = String(text || "");
+    const matches = [...raw.matchAll(/\[ánimo:\s*([a-záéíóúñ]+)\s*\]/gi)];
+    let mood = null;
+    if (matches.length) {
+      const last = matches[matches.length - 1][1].toLowerCase();
+      if (Object.prototype.hasOwnProperty.call(MOODS, last)) mood = last;
+    }
+    const clean = raw
+      .replace(/\[ánimo:\s*[a-záéíóúñ]+\s*\]/gi, "")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+    return { text: clean, mood };
+  }
+  function setMood(mood) {
+    if (!mood || !MOODS[mood] || !orbMood) return;
+    orbMood.hidden = false;
+    orbMood.textContent = "· " + MOODS[mood] + " ·";
+    orbMood.className = "orb-mood mood-" + mood;
+    orb.classList.remove(...MOOD_CLASSES);
+    orb.classList.add("mood-" + mood);
+  }
 
   // ---------------------------------------------------------- voz
   const SpeechRecognition =
@@ -228,6 +385,131 @@
     }
   }
 
+  // La respuesta de Claude para mandar un mensaje es solo un JSON:
+  // {"action":"send_whatsapp","to":"...","message":"..."} o
+  // {"action":"send_sms","to":"...","message":"..."}
+  function parseSendAction(reply) {
+    if (!reply) return null;
+    let text = String(reply).trim();
+    // Por si Claude le pegó el marcador de ánimo al JSON, se quita antes.
+    text = text.replace(/\[ánimo:\s*[a-záéíóúñ]+\s*\]/gi, "").trim();
+    // Por si Claude lo envuelve en un bloque de código.
+    const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (fenced) text = fenced[1].trim();
+    if (!text.startsWith("{")) return null;
+    try {
+      const parsed = JSON.parse(text);
+      if (
+        parsed &&
+        (parsed.action === "send_whatsapp" || parsed.action === "send_sms") &&
+        typeof parsed.to === "string" &&
+        typeof parsed.message === "string"
+      ) {
+        return parsed;
+      }
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  async function handleSendSms(action) {
+    const to = String(action.to || "").trim();
+    const message = String(action.message || "").trim();
+    if (!message) {
+      const msg = "¿Qué le escribo por SMS? Dime el mensaje y lo mando.";
+      addBubble("isis", msg, "SMS");
+      speak(msg);
+      return;
+    }
+    const recipient = resolveRecipient(to);
+    if (!recipient) {
+      const msg = `No tengo el número de ${to || "esa persona"}. Dime su número o agrégalo en Contactos y lo intento de nuevo.`;
+      addBubble("isis", msg, "SMS");
+      speak(msg);
+      return;
+    }
+    const { textbeeKey, textbeeDevice } = getKeys();
+    if (!textbeeKey) {
+      const msg =
+        "Falta la clave de TextBee en Configuración. Pégala ahí y lo intento de nuevo.";
+      addBubble("isis", msg, "SMS");
+      speak(msg);
+      return;
+    }
+    setOrbStatus("Isis está escribiendo…");
+    try {
+      const { ok, data } = await postJSON("/api/send-sms", {
+        to: recipient.number,
+        message,
+        textbeeKey,
+        textbeeDevice: textbeeDevice || undefined,
+      });
+      if (ok && data.ok) {
+        const msg = `Listo, le mandé el SMS a ${recipient.name} desde tu número: ${message}`;
+        addBubble("isis", msg, "SMS · enviado");
+        speak(msg);
+      } else {
+        const msg = data.error || "No pude mandar el SMS.";
+        addBubble("isis", msg, "SMS");
+        speak(msg);
+      }
+    } catch (e) {
+      const msg = "No pude hablar con el servidor ahora mismo.";
+      addBubble("isis", msg, "SMS");
+      speak(msg);
+    }
+    setOrbStatus("Toca el círculo para hablar");
+  }
+
+  async function handleSendWhatsapp(action) {
+    const to = String(action.to || "").trim();
+    const message = String(action.message || "").trim();
+    if (!message) {
+      const msg = "¿Qué le escribo? Dime el mensaje y lo mando.";
+      addBubble("isis", msg, "WhatsApp");
+      speak(msg);
+      return;
+    }
+    const recipient = resolveRecipient(to);
+    if (!recipient) {
+      const msg = `No tengo el número de ${to || "esa persona"}. Dime su número o agrégalo en Contactos y lo intento de nuevo.`;
+      addBubble("isis", msg, "WhatsApp");
+      speak(msg);
+      return;
+    }
+    const { whatsappToken } = getKeys();
+    if (!whatsappToken) {
+      const msg =
+        "Falta el token de WhatsApp en Configuración. Pégalo ahí y lo intento de nuevo.";
+      addBubble("isis", msg, "WhatsApp");
+      speak(msg);
+      return;
+    }
+    setOrbStatus("Isis está escribiendo…");
+    try {
+      const { ok, data } = await postJSON("/api/send-whatsapp", {
+        to: recipient.number,
+        message,
+        whatsappToken,
+      });
+      if (ok && data.ok) {
+        const msg = `Listo, le escribí a ${recipient.name}: ${message}`;
+        addBubble("isis", msg, "WhatsApp · enviado");
+        speak(msg);
+      } else {
+        const msg = data.error || "No pude mandar el mensaje.";
+        addBubble("isis", msg, "WhatsApp");
+        speak(msg);
+      }
+    } catch (e) {
+      const msg = "No pude hablar con el servidor ahora mismo.";
+      addBubble("isis", msg, "WhatsApp");
+      speak(msg);
+    }
+    setOrbStatus("Toca el círculo para hablar");
+  }
+
   async function sendMessage(text) {
     addBubble("user", text);
     chatInput.value = "";
@@ -268,8 +550,18 @@
         addBubble("isis", data.error, "Isis");
         speak(data.error);
       } else if (data.reply) {
-        addBubble("isis", data.reply, data.claudeLive ? "Isis · Claude en vivo" : "Isis");
-        speak(data.reply);
+        // El marcador de ánimo no se muestra en el chat ni se lee en voz alta.
+        const { text: cleanReply, mood } = extractMood(data.reply);
+        if (mood) setMood(mood);
+        const action = parseSendAction(cleanReply);
+        if (action) {
+          // Claude pidió mandar un mensaje: se ejecuta, nunca se muestra el JSON.
+          if (action.action === "send_sms") await handleSendSms(action);
+          else await handleSendWhatsapp(action);
+        } else {
+          addBubble("isis", cleanReply, data.claudeLive ? "Isis · Claude en vivo" : "Isis");
+          speak(cleanReply);
+        }
         if (data.needsKey) refreshKeyUI();
       } else {
         addBubble("isis", "No pude responder ahora mismo.", "Isis");
@@ -345,7 +637,9 @@
         analysisBox.innerHTML = `<p>${escapeHtml(data.error)}</p>`;
         return;
       }
-      analysisBox.textContent = data.analysis || "Sin análisis.";
+      const { text: cleanAnalysis, mood } = extractMood(data.analysis || "");
+      if (mood) setMood(mood);
+      analysisBox.textContent = cleanAnalysis || "Sin análisis.";
     } catch (e) {
       analysisBox.innerHTML =
         "<p>No pude hacer el análisis ahora mismo.</p>";
@@ -365,10 +659,21 @@
   $("btn-save-config").addEventListener("click", () => {
     const f = $("cfg-fableai").value.trim();
     const n = $("cfg-n8n").value.trim();
+    const w = $("cfg-whatsapp").value.trim();
+    const t = $("cfg-textbee") ? $("cfg-textbee").value.trim() : "";
+    const d = $("cfg-textbee-device")
+      ? $("cfg-textbee-device").value.trim()
+      : "";
     if (f) localStorage.setItem(LS_FABLEAI, f);
     if (n) localStorage.setItem(LS_N8N, n);
+    if (w) localStorage.setItem(LS_WHATSAPP, w);
+    if (t) localStorage.setItem(LS_TEXTBEE, t);
+    if (d) localStorage.setItem(LS_TEXTBEE_DEVICE, d);
     $("cfg-fableai").value = "";
     $("cfg-n8n").value = "";
+    $("cfg-whatsapp").value = "";
+    if ($("cfg-textbee")) $("cfg-textbee").value = "";
+    if ($("cfg-textbee-device")) $("cfg-textbee-device").value = "";
     const msg = $("config-msg");
     msg.hidden = false;
     msg.textContent = "Claves guardadas en este navegador.";
@@ -378,6 +683,9 @@
   $("btn-clear-config").addEventListener("click", () => {
     localStorage.removeItem(LS_FABLEAI);
     localStorage.removeItem(LS_N8N);
+    localStorage.removeItem(LS_WHATSAPP);
+    localStorage.removeItem(LS_TEXTBEE);
+    localStorage.removeItem(LS_TEXTBEE_DEVICE);
     const msg = $("config-msg");
     msg.hidden = false;
     msg.textContent = "Claves borradas de este navegador.";
@@ -388,10 +696,11 @@
   // ---------------------------------------------------------- inicio
   refreshKeyUI();
   renderFacts();
+  renderContacts();
   loadOrlando();
   addBubble(
     "isis",
-    "Hola, soy Isis. Tócame el círculo y háblame, o escríbeme abajo. Si me preguntas por Orlando, lo reviso; si me preguntas por el clima, lo consulto en vivo.",
+    "Hola, soy Isis. Tócame el círculo y háblame, o escríbeme abajo. Si me preguntas por Orlando, lo reviso; si me preguntas por el clima, lo consulto en vivo; y si me pides que le escriba a alguien, lo mando por SMS desde tu número (o por WhatsApp si me lo pides así).",
     "Isis"
   );
 })();

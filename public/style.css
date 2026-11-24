@@ -200,6 +200,45 @@ main { max-width: 640px; margin: 0 auto; padding: 8px 16px 32px; position: relat
 }
 .voice-note { color: var(--muted); font-size: 0.9rem; margin: 4px 0; }
 
+/* Línea pequeña del estado de ánimo de Isis, junto al orbe */
+.orb-mood {
+  font-family: var(--font-display);
+  letter-spacing: 4px;
+  text-transform: uppercase;
+  font-size: 0.72rem;
+  margin: 6px 0 0;
+  color: var(--neon);
+  text-shadow: 0 0 10px var(--neon-glow);
+}
+.orb-mood.mood-alegre { color: var(--neon-bright); }
+.orb-mood.mood-orgullosa { color: var(--gold); text-shadow: 0 0 10px rgba(255, 209, 102, 0.5); }
+.orb-mood.mood-enojada { color: #ff8ba0; text-shadow: 0 0 10px rgba(255, 84, 112, 0.5); }
+.orb-mood.mood-preocupada { color: #ffe9a8; text-shadow: 0 0 10px rgba(255, 209, 102, 0.35); }
+.orb-mood.mood-frustrada { color: var(--neon-deep); }
+.orb-mood.mood-bromeando { color: var(--neon-bright); }
+.orb-mood.mood-tranquila { color: var(--muted); text-shadow: none; }
+
+/* Leve cambio de tono del orbe según el ánimo de Isis */
+.orb.mood-alegre {
+  box-shadow: 0 0 70px rgba(125, 249, 255, 0.8), 0 0 140px rgba(0, 212, 255, 0.35), inset 0 0 44px rgba(125, 249, 255, 0.4);
+}
+.orb.mood-orgullosa {
+  box-shadow: 0 0 56px rgba(255, 209, 102, 0.65), 0 0 120px rgba(255, 209, 102, 0.25), inset 0 0 40px rgba(255, 209, 102, 0.3);
+}
+.orb.mood-enojada {
+  box-shadow: 0 0 56px rgba(255, 84, 112, 0.55), 0 0 120px rgba(255, 84, 112, 0.22), inset 0 0 40px rgba(255, 84, 112, 0.28);
+}
+.orb.mood-preocupada {
+  box-shadow: 0 0 44px rgba(255, 209, 102, 0.4), 0 0 100px rgba(255, 209, 102, 0.15), inset 0 0 34px rgba(255, 209, 102, 0.18);
+}
+.orb.mood-frustrada {
+  box-shadow: 0 0 40px rgba(0, 144, 255, 0.6), 0 0 100px rgba(0, 144, 255, 0.22), inset 0 0 34px rgba(0, 144, 255, 0.3);
+}
+.orb.mood-bromeando { animation: orbPulse 1.6s ease-in-out infinite; }
+.orb.mood-tranquila {
+  box-shadow: 0 0 30px rgba(0, 212, 255, 0.35), 0 0 80px rgba(0, 212, 255, 0.15), inset 0 0 28px rgba(0, 212, 255, 0.2);
+}
+
 /* ---------------------------------------------------------- Paneles HUD */
 .card {
   position: relative;
@@ -383,6 +422,10 @@ main { max-width: 640px; margin: 0 auto; padding: 8px 16px 32px; position: relat
 }
 .fact-form { display: flex; gap: 8px; }
 
+/* Contactos: dos campos que se acomodan en móvil */
+.contact-form { flex-wrap: wrap; }
+.contact-form input { min-width: 140px; }
+
 /* ---------------------------------------------------------- Configuración */
 .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
 .field span:first-child { font-size: 0.92rem; letter-spacing: 0.5px; }
@@ -398,5 +441,5 @@ footer {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .scanline, .particles, .orb-ring, .orb-ring.pulse, .brand-dot { animation: none !important; }
+  .scanline, .particles, .orb-ring, .orb-ring.pulse, .brand-dot, .orb.mood-bromeando { animation: none !important; }
 }
