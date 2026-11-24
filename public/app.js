@@ -11,11 +11,13 @@
   const LS_WHATSAPP = "isis_whatsapp_token";
   const LS_TEXTBEE = "isis_textbee_key";
   const LS_TEXTBEE_DEVICE = "isis_textbee_device";
-  const LS_GOOGLE = "isis_google_key";
-  const LS_GOOGLE_VOICE = "isis_google_voice";
-  // Voz de Google de por defecto: es-MX-Neural2-A (femenina, español de
-  // México, Neural2).
-  const GOOGLE_DEFAULT_VOICE = "es-MX-Neural2-A";
+  const LS_AZURE = "isis_azure_key";
+  const LS_AZURE_REGION = "isis_azure_region";
+  const LS_AZURE_VOICE = "isis_azure_voice";
+  // Voz de Azure de por defecto: es-MX-DaliaNeural (femenina, español de
+  // México, neural). Región de por defecto: eastus.
+  const AZURE_DEFAULT_VOICE = "es-MX-DaliaNeural";
+  const AZURE_DEFAULT_REGION = "eastus";
   const LS_FACTS = "isis_facts";
   const LS_HISTORY = "isis_history";
   const LS_SUMMARY = "isis_summary";
@@ -56,19 +58,28 @@
       whatsappToken: (localStorage.getItem(LS_WHATSAPP) || "").trim(),
       textbeeKey: (localStorage.getItem(LS_TEXTBEE) || "").trim(),
       textbeeDevice: (localStorage.getItem(LS_TEXTBEE_DEVICE) || "").trim(),
-      googleKey: (localStorage.getItem(LS_GOOGLE) || "").trim(),
+      azureKey: (localStorage.getItem(LS_AZURE) || "").trim(),
+      azureRegion: (localStorage.getItem(LS_AZURE_REGION) || "").trim(),
     };
   }
 
   function refreshKeyUI() {
-    const { fableaiKey, n8nKey, whatsappToken, textbeeKey, textbeeDevice, googleKey } =
-      getKeys();
+    const {
+      fableaiKey,
+      n8nKey,
+      whatsappToken,
+      textbeeKey,
+      textbeeDevice,
+      azureKey,
+      azureRegion,
+    } = getKeys();
     const fState = $("cfg-fableai-state");
     const nState = $("cfg-n8n-state");
     const wState = $("cfg-whatsapp-state");
     const tState = $("cfg-textbee-state");
     const dState = $("cfg-textbee-device-state");
-    const eState = $("cfg-google-state");
+    const aState = $("cfg-azure-state");
+    const rState = $("cfg-azure-region-state");
     fState.textContent = fableaiKey ? "Guardada ✓" : "Sin guardar";
     fState.classList.toggle("ok", !!fableaiKey);
     nState.textContent = n8nKey ? "Guardada ✓" : "Sin guardar";
@@ -85,9 +96,15 @@
         : "Sin guardar (opcional)";
       dState.classList.toggle("ok", !!textbeeDevice);
     }
-    if (eState) {
-      eState.textContent = googleKey ? "Guardada ✓" : "Sin guardar";
-      eState.classList.toggle("ok", !!googleKey);
+    if (aState) {
+      aState.textContent = azureKey ? "Guardada ✓" : "Sin guardar";
+      aState.classList.toggle("ok", !!azureKey);
+    }
+    if (rState) {
+      rState.textContent = azureRegion
+        ? `Guardada ✓ (${azureRegion})`
+        : "eastus (por defecto)";
+      rState.classList.toggle("ok", !!azureRegion);
     }
     keyBanner.hidden = !!fableaiKey;
   }
@@ -514,7 +531,7 @@
   // --- selección de voz: la más natural y femenina en español que tenga
   // el teléfono. El idioma manda: es-MX, es-US, es-419, es-ES; dentro de
   // cada idioma, primero las voces femeninas, luego las "Natural"/"Neural"
-  // de Google. En Android las voces llegan tarde, por eso se escucha
+  // del motor de voz del teléfono. En Android las voces llegan tarde, por
   // "voiceschanged" y se vuelve a leer la lista cuando están listas.
   let spanishVoices = [];
   let selectedVoice = null;
@@ -534,7 +551,7 @@
     return 4;
   }
   // Calidad de la voz (dentro del mismo idioma): femenina +30, natural o
-  // neural +25, Google +20. Solo se miran las palabras "female", "mujer"
+  // neural +25, motor de Google del teléfono +20. Solo se miran las
   // o "femenina" en el nombre de la voz; no se inventan nombres de
   // personas concretas.
   function scoreVoice(v) {
@@ -595,18 +612,18 @@
     sel.disabled = false;
   }
 
-  // --- voces de Google Cloud TTS (cuando hay clave): se listan desde
-  // /api/voices, filtradas a español. Sin clave, el selector dice que
-  // falta y Isis usa la voz del teléfono.
-  let googleVoices = [];
-  let selectedGoogleVoice =
-    (localStorage.getItem(LS_GOOGLE_VOICE) || "").trim() ||
-    GOOGLE_DEFAULT_VOICE;
-  function googleVoiceLabel(v) {
+  // --- voces de Azure AI Speech (cuando hay clave y región): se listan
+  // desde /api/voices, filtradas a español. Sin clave, el selector dice
+  // que falta y Isis usa la voz del teléfono.
+  let azureVoices = [];
+  let selectedAzureVoice =
+    (localStorage.getItem(LS_AZURE_VOICE) || "").trim() ||
+    AZURE_DEFAULT_VOICE;
+  function azureVoiceLabel(v) {
     const gender =
-      v.ssmlGender === "FEMALE"
+      v.ssmlGender === "Female"
         ? "femenina"
-        : v.ssmlGender === "MALE"
+        : v.ssmlGender === "Male"
           ? "masculina"
           : "";
     const langs = Array.isArray(v.languageCodes)
@@ -615,35 +632,40 @@
     const bits = [langs, gender].filter(Boolean);
     return bits.length ? `${v.name} · ${bits.join(" · ")}` : v.name;
   }
-  async function refreshGoogleVoices() {
-    const sel = $("google-voice-select");
-    const state = $("google-voice-state");
+  async function refreshAzureVoices() {
+    const sel = $("azure-voice-select");
+    const state = $("azure-voice-state");
     if (!sel) return;
-    const key = (localStorage.getItem(LS_GOOGLE) || "").trim();
+    const key = (localStorage.getItem(LS_AZURE) || "").trim();
+    const region =
+      (localStorage.getItem(LS_AZURE_REGION) || "").trim() ||
+      AZURE_DEFAULT_REGION;
     sel.innerHTML = "";
     if (!key) {
-      googleVoices = [];
+      azureVoices = [];
       if (state)
         state.textContent =
-          "Sin clave de Google: Isis usa la voz del teléfono.";
+          "Sin clave de Azure: Isis usa la voz del teléfono.";
       sel.disabled = true;
       const opt = document.createElement("option");
-      opt.textContent = "Falta la clave de Google";
+      opt.textContent = "Falta la clave de Azure";
       sel.appendChild(opt);
       return;
     }
-    if (state) state.textContent = "Cargando voces de Google…";
+    if (state) state.textContent = "Cargando voces de Azure…";
     sel.disabled = true;
     try {
-      const res = await fetch(
-        `/api/voices?key=${encodeURIComponent(key)}`
-      );
+      const res = await fetch("/api/voices", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ azureKey: key, azureRegion: region }),
+      });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !Array.isArray(data.voices)) {
         throw new Error(data?.error || "no voices");
       }
       // Solo español: es-MX, es-US y es-ES (la API trae todos los idiomas).
-      googleVoices = data.voices.filter(
+      azureVoices = data.voices.filter(
         (v) =>
           v &&
           v.name &&
@@ -652,32 +674,32 @@
             ["es-mx", "es-us", "es-es"].includes(String(lc).toLowerCase())
           )
       );
-      if (googleVoices.length === 0) throw new Error("empty");
-      googleVoices.forEach((v) => {
+      if (azureVoices.length === 0) throw new Error("empty");
+      azureVoices.forEach((v) => {
         const opt = document.createElement("option");
         opt.value = v.name;
-        opt.textContent = googleVoiceLabel(v);
+        opt.textContent = azureVoiceLabel(v);
         sel.appendChild(opt);
       });
-      const saved = (localStorage.getItem(LS_GOOGLE_VOICE) || "").trim();
+      const saved = (localStorage.getItem(LS_AZURE_VOICE) || "").trim();
       const pick =
-        googleVoices.find((v) => v.name === saved) ||
-        googleVoices.find((v) => v.name === GOOGLE_DEFAULT_VOICE) ||
-        googleVoices[0];
-      selectedGoogleVoice = pick.name;
+        azureVoices.find((v) => v.name === saved) ||
+        azureVoices.find((v) => v.name === AZURE_DEFAULT_VOICE) ||
+        azureVoices[0];
+      selectedAzureVoice = pick.name;
       sel.value = pick.name;
       sel.disabled = false;
       if (state)
-        state.textContent = `${googleVoices.length} voces de Google disponibles.`;
+        state.textContent = `${azureVoices.length} voces de Azure disponibles.`;
     } catch (e) {
-      googleVoices = [];
+      azureVoices = [];
       sel.innerHTML = "";
       const opt = document.createElement("option");
       opt.textContent = "No se pudieron cargar las voces";
       sel.appendChild(opt);
       if (state)
         state.textContent =
-          "No pude cargar las voces de Google. Isis usa la voz del teléfono.";
+          "No pude cargar las voces de Azure. Isis usa la voz del teléfono.";
     }
   }
 
@@ -732,21 +754,21 @@
     const parts = clean.match(/[^.!?…]+[.!?…]["»”')]*|[^.!?…]+$/g) || [];
     return parts.map((s) => s.trim()).filter(Boolean);
   }
-  // --- audio de Google Cloud TTS: un solo elemento <audio> reutilizado.
-  let googleAudio = null;
-  let googleGen = 0;
-  function stopGoogleAudio() {
-    googleGen += 1;
-    if (googleAudio) {
+  // --- audio de Azure AI Speech: un solo elemento <audio> reutilizado.
+  let azureAudio = null;
+  let azureGen = 0;
+  function stopAzureAudio() {
+    azureGen += 1;
+    if (azureAudio) {
       try {
-        googleAudio.pause();
+        azureAudio.pause();
       } catch (e) {}
-      googleAudio.src = "";
-      googleAudio = null;
+      azureAudio.src = "";
+      azureAudio = null;
     }
   }
   // Limpieza al terminar de hablar (sirve para la voz del teléfono y
-  // para Google): se quita el estado "hablando" y vuelve la escucha.
+  // para Azure): se quita el estado "hablando" y vuelve la escucha.
   function finishSpeaking() {
     speakingNow = false;
     orb.classList.remove("speaking");
@@ -754,50 +776,54 @@
     setOrbStatus(idleStatus());
     setTimeout(maybeStartWake, 800);
   }
-  // speak(text, moodOverride): con clave de Google usa esa voz
-  // natural; si no hay clave o Google falla, usa la voz del teléfono
-  // como siempre. Isis nunca se queda muda. Para Google la emoción
+  // speak(text, moodOverride): con clave de Azure usa esa voz
+  // natural; si no hay clave o Azure falla, usa la voz del teléfono
+  // como siempre. Isis nunca se queda muda. Para Azure la emoción
   // la da la propia voz (no se toca pitch ni rate del audio).
   async function speak(text, moodOverride) {
     const clean = String(text || "").trim();
     if (!clean) return;
-    // Cortar lo que esté sonando (sea del teléfono o de Google).
-    stopGoogleAudio();
+    // Cortar lo que esté sonando (sea del teléfono o de Azure).
+    stopAzureAudio();
     if ("speechSynthesis" in window) window.speechSynthesis.cancel();
     speakGen += 1;
-    const key = (localStorage.getItem(LS_GOOGLE) || "").trim();
+    const key = (localStorage.getItem(LS_AZURE) || "").trim();
+    const region =
+      (localStorage.getItem(LS_AZURE_REGION) || "").trim() ||
+      AZURE_DEFAULT_REGION;
     if (key) {
-      const ok = await speakGoogle(clean, key);
+      const ok = await speakAzure(clean, key, region);
       if (ok) return;
-      // Si Google falló, se cae a la voz del teléfono.
+      // Si Azure falló, se cae a la voz del teléfono.
     }
     speakPhone(clean, moodOverride);
   }
-  async function speakGoogle(text, key) {
+  async function speakAzure(text, key, region) {
     try {
       const res = await fetch("/api/tts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           text,
-          googleKey: key,
-          voiceName: selectedGoogleVoice || GOOGLE_DEFAULT_VOICE,
+          azureKey: key,
+          azureRegion: region,
+          voiceName: selectedAzureVoice || AZURE_DEFAULT_VOICE,
         }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.audioBase64) return false;
-      const gen = googleGen;
+      const gen = azureGen;
       const audio = new Audio(`data:audio/mpeg;base64,${data.audioBase64}`);
-      googleAudio = audio;
+      azureAudio = audio;
       audio.onplay = () => {
-        if (gen !== googleGen) return;
+        if (gen !== azureGen) return;
         speakingNow = true;
         orb.classList.add("speaking");
         orb.classList.remove("listening");
       };
       const done = () => {
-        if (gen !== googleGen) return;
-        googleAudio = null;
+        if (gen !== azureGen) return;
+        azureAudio = null;
         finishSpeaking();
       };
       audio.onended = done;
@@ -805,7 +831,7 @@
       await audio.play();
       return true;
     } catch (e) {
-      googleAudio = null;
+      azureAudio = null;
       return false;
     }
   }
@@ -1768,24 +1794,29 @@
     const d = $("cfg-textbee-device")
       ? $("cfg-textbee-device").value.trim()
       : "";
-    const el = $("cfg-google") ? $("cfg-google").value.trim() : "";
+    const a = $("cfg-azure") ? $("cfg-azure").value.trim() : "";
+    const r = $("cfg-azure-region")
+      ? $("cfg-azure-region").value.trim()
+      : "";
     if (f) localStorage.setItem(LS_FABLEAI, f);
     if (n) localStorage.setItem(LS_N8N, n);
     if (w) localStorage.setItem(LS_WHATSAPP, w);
     if (t) localStorage.setItem(LS_TEXTBEE, t);
     if (d) localStorage.setItem(LS_TEXTBEE_DEVICE, d);
-    if (el) localStorage.setItem(LS_GOOGLE, el);
+    if (a) localStorage.setItem(LS_AZURE, a);
+    if (r) localStorage.setItem(LS_AZURE_REGION, r);
     $("cfg-fableai").value = "";
     $("cfg-n8n").value = "";
     $("cfg-whatsapp").value = "";
     if ($("cfg-textbee")) $("cfg-textbee").value = "";
     if ($("cfg-textbee-device")) $("cfg-textbee-device").value = "";
-    if ($("cfg-google")) $("cfg-google").value = "";
+    if ($("cfg-azure")) $("cfg-azure").value = "";
+    if ($("cfg-azure-region")) $("cfg-azure-region").value = "";
     const msg = $("config-msg");
     msg.hidden = false;
     msg.textContent = "Claves guardadas en este navegador.";
     refreshKeyUI();
-    refreshGoogleVoices();
+    refreshAzureVoices();
     loadOrlando();
   });
   $("btn-clear-config").addEventListener("click", () => {
@@ -1794,12 +1825,14 @@
     localStorage.removeItem(LS_WHATSAPP);
     localStorage.removeItem(LS_TEXTBEE);
     localStorage.removeItem(LS_TEXTBEE_DEVICE);
-    localStorage.removeItem(LS_GOOGLE);
+    localStorage.removeItem(LS_AZURE);
+    localStorage.removeItem(LS_AZURE_REGION);
+    localStorage.removeItem(LS_AZURE_VOICE);
     const msg = $("config-msg");
     msg.hidden = false;
     msg.textContent = "Claves borradas de este navegador.";
     refreshKeyUI();
-    refreshGoogleVoices();
+    refreshAzureVoices();
     loadOrlando();
   });
 
@@ -1816,14 +1849,14 @@
       }
     });
   }
-  // --- selector de voz de Google (Configuración): se llena desde
-  // /api/voices cuando hay clave. Al elegir, se guarda la voz.
-  const googleVoiceSelect = $("google-voice-select");
-  if (googleVoiceSelect) {
-    googleVoiceSelect.addEventListener("change", () => {
-      if (!googleVoiceSelect.value) return;
-      selectedGoogleVoice = googleVoiceSelect.value;
-      localStorage.setItem(LS_GOOGLE_VOICE, selectedGoogleVoice);
+  // --- selector de voz de Azure (Configuración): se llena desde
+  // /api/voices cuando hay clave y región. Al elegir, se guarda la voz.
+  const azureVoiceSelect = $("azure-voice-select");
+  if (azureVoiceSelect) {
+    azureVoiceSelect.addEventListener("change", () => {
+      if (!azureVoiceSelect.value) return;
+      selectedAzureVoice = azureVoiceSelect.value;
+      localStorage.setItem(LS_AZURE_VOICE, selectedAzureVoice);
     });
   }
   const testVoiceBtn = $("btn-test-voice");
@@ -1848,7 +1881,7 @@
     window.speechSynthesis.addEventListener("voiceschanged", refreshVoices);
   }
   refreshVoices();
-  refreshGoogleVoices();
+  refreshAzureVoices();
   updateWakeUI();
   // Conversación plegable: empieza colapsada (solo la vista previa).
   if (chatToggle) {
