@@ -7,13 +7,15 @@ enseñan.
 
 ## Qué hace
 
-- **Voz**: toca el círculo y habla; Isis contesta por voz. Con la clave
-  de Azure en Configuración, habla con una voz natural de Microsoft
-  Azure AI Speech (por defecto `es-MX-DaliaNeural`, femenina, español
-  de México); sin clave, o si Azure falla o se acaba el saldo, usa la
-  voz del teléfono (Web Speech API) como antes, así Isis nunca se queda
-  muda. En **Configuración** se elige su voz de Azure (lista filtrada a
-  español, con botón "Probar voz") y también la voz del teléfono (lista
+- **Voz**: toca el círculo y habla; Isis contesta por voz. Habla con
+  Kokoro-82M, un modelo de voz gratis y de código abierto que corre
+  directo en el teléfono (kokoro-js + ONNX): sin clave, sin servidor y
+  sin costo por uso. La primera vez descarga el modelo (~88 MB) y luego
+  queda guardado en el navegador; mientras descarga, o si Kokoro falla,
+  Isis usa la voz del teléfono (Web Speech API), así nunca se queda
+  muda. En **Configuración** se elige su voz de Kokoro: solo hay 3 en
+  español — Dora (femenina, por defecto), Alex y Santa (masculinas) —
+  con botón "Probar voz"; y también se elige la voz del teléfono (lista
   de voces en español del teléfono: por defecto toma la más femenina y
   natural disponible, en orden es-MX, es-US, es-419, es-ES, prefiriendo
   las voces femeninas "Natural"/"Neural" del motor del teléfono). Con la voz del
@@ -23,8 +25,9 @@ enseñan.
   respuesta en oraciones y hace una pausa que depende de cómo termina
   cada una (más larga tras "!" o "?", corta tras ".", con una variación
   pequeña para no sonar metronómica), para que las comas y los puntos
-  suenen naturales. Con la voz de Azure, la emoción la da la propia
-  voz. Isis usa el nombre "Santiago" como máximo una vez por respuesta,
+  suenen naturales. Con Kokoro la emoción la da la propia voz (habla
+  oración por oración, generando la siguiente mientras suena la actual,
+  para no esperar todo el texto en un teléfono lento). Isis usa el nombre "Santiago" como máximo una vez por respuesta,
   y solo cuando suena natural. Las voces del teléfono son las del propio
   teléfono (el motor de texto a voz de Android): para la más natural, descarga una
   voz de alta calidad en español en los ajustes de texto a voz del
@@ -89,29 +92,40 @@ enseñan.
   restaurante (429/502/503), el proxy reintenta hasta 3 veces con
   backoff (inmediato, +1 s, +2 s) y si persiste avisa en español claro.
 
-## Voz de Azure AI Speech
+## Voz de Kokoro (gratis, en el navegador)
 
-Isis habla con Microsoft Azure AI Speech, una voz mucho más natural
-que la del teléfono:
+Isis habla con Kokoro-82M, un modelo de texto a voz de 82 millones de
+parámetros, gratis para siempre y de código abierto (Apache 2.0), que
+corre 100% en el navegador del teléfono con la librería oficial
+kokoro-js (v1.2.1, desde jsDelivr) y ONNX Runtime Web. Nada de claves,
+nada de servidores, nada de costo por uso: el audio no sale del
+teléfono.
 
-1. En portal.azure.com crea un recurso **Speech** (Azure AI Services).
-2. Elige el plan **Free (F0)**: es gratis, 500,000 caracteres al mes de
-   voces neurales (~11 horas de voz), con límite de 20 peticiones por
-   minuto. Para crear la cuenta Azure pide una tarjeta para verificar la
-   identidad, pero el plan F0 no cobra nada.
-3. En el recurso, copia la **clave** (Keys and Endpoint) y anota la
-   **región** (por ejemplo `eastus`).
-4. Pega la clave y la región en Isis, en **Configuración → Clave de
-   Azure** y **Región de Azure**, y guarda. En el selector de abajo
-   elige la voz (por defecto `es-MX-DaliaNeural`, femenina, español de
-   México); el botón "Probar voz" la prueba con una frase cálida.
+1. Al abrir Isis, la voz se descarga sola en segundo plano (primera
+   vez ~88 MB: el modelo cuantizado q8 desde Hugging Face,
+   `onnx-community/Kokoro-82M-v1.0-ONNX`); luego queda guardada en la
+   caché del navegador y ya no se descarga. Mientras descarga, Isis
+   muestra "Descargando la voz de Isis por primera vez…" y sigue
+   hablando con la voz del teléfono; el chat no se bloquea.
+2. En **Configuración → Voz de Isis (Kokoro, gratis)** se elige la voz:
+   solo hay 3 en español — `ef_dora` (Dora, femenina, por defecto),
+   `em_alex` (Alex, masculina) y `em_santa` (Santa, masculina,
+   navideña). La elección se guarda en el navegador
+   (`isis_kokoro_voice`). El botón "Probar voz" la prueba con una
+   frase cálida; si Kokoro no está lista, prueba la voz del teléfono
+   (y reintenta la descarga si había fallado).
+3. La síntesis corre en el teléfono (WASM): en un teléfono modesto
+   puede tardar unos segundos por respuesta, por eso Isis habla
+   oración por oración, generando la siguiente mientras suena la
+   actual. Si una oración tarda más de 60 s o algo falla, Isis sigue
+   con la voz del teléfono desde ahí; nunca se queda muda.
 
-**Plan gratis**: 500,000 caracteres al mes de voces neurales. Eso son
-unas 11 horas de voz al mes, muchísimo más que los 10,000 caracteres de
-otros servicios gratis. Si se acaba el saldo, Isis lo dice y vuelve sola
-a la voz del teléfono; no se queda muda. La clave y la región viven
-**solo en el navegador de Santiago** (localStorage), como las demás: el
-servidor las recibe en cada llamada a `/api/tts` y no las guarda.
+**Limitación honesta**: la calidad de las voces en español de Kokoro
+es buena pero no tan expresiva como las voces de paga, y la primera
+descarga (~88 MB) pesa; además, en el teléfono la síntesis es más
+lenta que en una computadora. Si algún día se quiere otra voz, el
+cambio es solo el nombre de la voz en Configuración (o el modelo, en
+`KOKORO_MODEL_ID` de `public/app.js`).
 
 ## Memoria
 
@@ -190,9 +204,6 @@ Dentro de la app, en **Configuración**, Santiago pega una sola vez:
   Configuración. Plan gratis: 300 SMS/mes, 50/día, 1 dispositivo, sin
   tarjeta. El teléfono debe estar prendido, con señal y con TextBee activo
   cuando se mande el SMS; si está apagado o sin internet, el SMS no sale.
-- **Clave de Azure** (voz natural): se crea en portal.azure.com
-  (recurso Speech en plan Free F0 → copiar la clave y la región).
-  Ver **Voz de Azure AI Speech** arriba.
 
 Las claves viven **solo en el localStorage del navegador**. Nunca se
 guardan en el servidor, nunca van a ningún archivo del repo y nunca se
@@ -211,8 +222,6 @@ cada llamada y las usa solo para hablar con FableAI / n8n.
 | POST | `/api/send-whatsapp` | `{ to, message, whatsappToken }` — manda un texto por WhatsApp desde el bot |
 | POST | `/api/send-sms` | `{ to, message, textbeeKey, deviceId? }` — manda un SMS desde su número (TextBee) |
 | POST | `/api/send-sms` | `{ to, message, textbeeKey }` — manda un SMS por TextBee desde tu número |
-| POST | `/api/tts` | `{ text, azureKey, azureRegion, voiceName? }` — voz de Azure AI Speech (devuelve audio en base64) |
-| POST | `/api/voices` | `{ azureKey, azureRegion }` — lista de voces de Azure AI Speech (name, languageCodes, ssmlGender) |
 | POST | `/api/mitote` | `{ action, params }` — proxy a El Mitote Comandas (lista blanca; lo destructivo exige `params.confirmed: true`; reintenta hasta 3 veces ante 429/502/503) |
 
 ## El Mitote: conexión y token (solo en el servidor)
