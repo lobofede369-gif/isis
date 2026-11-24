@@ -592,11 +592,17 @@
   // --- voz de Kokoro (gratis, corre en el navegador, sin clave ni
   // servidor): kokoro-js (librería oficial de hexgrad, Apache 2.0) con
   // ONNX Runtime Web. El modelo Kokoro-82M (cuantizado q8, ~88 MB) se
-  // descarga una sola vez desde Hugging Face y queda en la caché del
-  // navegador; la síntesis corre en el teléfono. Voces en español: solo
-  // 3 (ef_dora femenina por defecto, em_alex y em_santa masculinas).
-  // Si Kokoro no está listo o falla, Isis usa la voz del teléfono:
-  // nunca se queda muda.
+  // descarga SOLO cuando Santiago toca "Descargar voz de Isis" (o
+  // "Probar voz"), una sola vez desde Hugging Face, y queda en la caché
+  // del navegador; la síntesis corre en el teléfono. Voces en español:
+  // solo 3 (ef_dora femenina por defecto, em_alex y em_santa
+  // masculinas). Si Kokoro no está descargada o falla, Isis usa la voz
+  // del teléfono: nunca se queda muda.
+  // Modelo: q8, no q4. El archivo q4 del mismo repo pesa ~291 MB
+  // (medido en Hugging Face: model_q4.onnx = 305 215 966 bytes), más
+  // del triple que el q8 (~88 MB: model_quantized.onnx =
+  // 92 361 116 bytes), así que q4 haría la descarga más pesada y lenta,
+  // no más ligera.
   const KOKORO_CDN_URL = "https://cdn.jsdelivr.net/npm/kokoro-js@1.2.1/+esm";
   const KOKORO_MODEL_ID = "onnx-community/Kokoro-82M-v1.0-ONNX";
   const LS_KOKORO_VOICE = "isis_kokoro_voice";
@@ -622,9 +628,14 @@
     selectedKokoroVoice = KOKORO_DEFAULT_VOICE;
   }
 
+  // La nota junto al orbe solo aparece cuando Isis ya habló con la voz
+  // del teléfono porque Kokoro aún no está descargada: un recordatorio
+  // breve, no un aviso permanente al abrir la app.
+  let kokoroDownloadHint = false;
   // Estado visible de la voz de Kokoro: una línea pequeña junto al orbe
-  // (mientras descarga la primera vez o si falló) y el estado del
-  // selector en Configuración.
+  // (mientras descarga, si falló, o la nota de que aún no está
+  // descargada), el estado del selector y el botón de descarga en
+  // Configuración.
   function updateKokoroStatus() {
     const status = $("kokoro-status");
     if (status) {
@@ -635,6 +646,10 @@
         status.hidden = false;
         status.textContent =
           "La voz de Kokoro no se pudo cargar; Isis habla con la voz del teléfono.";
+      } else if (kokoroState === "idle" && kokoroDownloadHint) {
+        status.hidden = false;
+        status.textContent =
+          "La voz de Isis aún no está descargada — descárgala en Configuración.";
       } else {
         status.hidden = true;
         status.textContent = "";
@@ -650,18 +665,35 @@
           "Voz de Kokoro lista · corre en este teléfono, sin costo ni clave.";
       } else if (kokoroState === "failed") {
         state.textContent =
-          "Kokoro no se pudo cargar. Isis usa la voz del teléfono; toca “Probar voz” para reintentarlo.";
+          "Kokoro no se pudo cargar. Isis usa la voz del teléfono; toca “Descargar voz de Isis” para reintentarlo.";
       } else {
         state.textContent =
-          "La voz de Kokoro se descarga sola al abrir Isis (primera vez).";
+          "Aún no descargada (~88 MB, una sola vez · mejor con Wi-Fi).";
+      }
+    }
+    const dlBtn = $("btn-download-kokoro");
+    if (dlBtn) {
+      if (kokoroState === "loading") {
+        dlBtn.disabled = true;
+        dlBtn.textContent = "Descargando…";
+      } else if (kokoroState === "ready") {
+        dlBtn.disabled = true;
+        dlBtn.textContent = "Voz descargada ✓";
+      } else if (kokoroState === "failed") {
+        dlBtn.disabled = false;
+        dlBtn.textContent = "Reintentar descarga";
+      } else {
+        dlBtn.disabled = false;
+        dlBtn.textContent = "Descargar voz de Isis";
       }
     }
   }
 
   // Carga kokoro-js desde el CDN y el modelo desde Hugging Face. No
   // bloquea nada: el chat y la voz del teléfono siguen funcionando
-  // mientras descarga. Se llama sola al abrir la página y se reintenta
-  // al tocar "Probar voz" si falló.
+  // mientras descarga. SOLO se llama bajo demanda (botón "Descargar voz
+  // de Isis" o "Probar voz"): al abrir la app no se descarga nada, para
+  // que Isis arranque rápida y ligera. Si falló, se puede reintentar.
   function initKokoro() {
     if (kokoroState === "ready") return Promise.resolve(kokoroTTS);
     if (kokoroState === "loading") return kokoroLoadPromise;
@@ -907,6 +939,13 @@
       // Kokoro falló a la mitad: el resto con la voz del teléfono.
       speakPhone(remaining, moodOverride);
       return;
+    }
+    // Sin Kokoro (aún no descargada): la voz del teléfono de inmediato,
+    // sin intentar descargar nada ni esperar. Solo un aviso breve junto
+    // al orbe para que sepa dónde descargarla.
+    if (kokoroState === "idle") {
+      kokoroDownloadHint = true;
+      updateKokoroStatus();
     }
     speakPhone(clean, moodOverride);
   }
@@ -1925,13 +1964,24 @@
   if (testVoiceBtn) {
     testVoiceBtn.addEventListener("click", () => {
       stopWake(); // que no se escuche a sí misma y se active sola
-      // Si Kokoro falló (o aún no se intentó), reintenta la descarga;
-      // mientras tanto Isis habla con la voz del teléfono.
+      // Si Kokoro aún no está descargada o falló, empieza (o reintenta)
+      // la descarga; Isis habla de inmediato con la voz del teléfono y
+      // no espera a que termine. Cuando la descarga termina, la
+      // siguiente prueba ya usa Kokoro.
       if (kokoroState === "failed" || kokoroState === "idle") initKokoro();
       speak(
         "¡Hola, Santiago! Me da mucho gusto verte, ¿en qué te ayudo hoy?",
         "alegre"
       );
+    });
+  }
+  // Botón "Descargar voz de Isis" (Configuración): empieza la descarga
+  // bajo demanda. Mientras descarga, Isis sigue hablando con la voz del
+  // teléfono; cuando termina, la siguiente respuesta ya usa Kokoro.
+  const downloadKokoroBtn = $("btn-download-kokoro");
+  if (downloadKokoroBtn) {
+    downloadKokoroBtn.addEventListener("click", () => {
+      initKokoro();
     });
   }
 
@@ -1948,9 +1998,11 @@
   refreshVoices();
   populateKokoroSelect();
   updateKokoroStatus();
-  // Kokoro se descarga sola en segundo plano al abrir Isis (primera
-  // vez ~88 MB; luego queda en caché). El chat no espera por ella.
-  setTimeout(initKokoro, 1000);
+  // Al abrir Isis NO se descarga nada pesado: Kokoro solo se baja cuando
+  // Santiago toca "Descargar voz de Isis" o "Probar voz", para que la
+  // app arranque rápida y ligera. Lo demás del inicio es ligero: claves,
+  // hechos, contactos, memoria y la revisión de Orlando (la hace el
+  // servidor); las voces del teléfono solo se listan, no se descargan.
   updateWakeUI();
   // Conversación plegable: empieza colapsada (solo la vista previa).
   if (chatToggle) {

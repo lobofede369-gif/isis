@@ -216,8 +216,9 @@
         <span id="voice-state" class="field-state">Buscando voces en español…</span>
         <div class="voice-row">
           <select id="kokoro-voice-select" aria-label="Voz de Kokoro"></select>
+          <button id="btn-download-kokoro" class="small-btn" type="button">Descargar voz de Isis</button>
         </div>
-        <span id="kokoro-voice-state" class="field-state">La voz de Kokoro se descarga sola al abrir Isis (primera vez).</span>
+        <span id="kokoro-voice-state" class="field-state">Aún no descargada (~88 MB, una sola vez · mejor con Wi-Fi).</span>
       </div>
       <div class="config-actions">
         <button id="btn-save-config" class="primary-btn">Guardar claves</button>
@@ -229,7 +230,7 @@
         La clave de API de n8n se crea en n8n → Settings → n8n API.
         El token de WhatsApp se consigue en Meta for Developers → tu app «PCN Bot» → WhatsApp → API Setup → Token de acceso.
         La clave de TextBee y el ID del dispositivo se consiguen en textbee.dev: crea una cuenta, instala la app en tu teléfono, agrega el dispositivo escaneando el QR y crea una API key. Sin el ID, Isis usa tu dispositivo por defecto.
-        La voz de Kokoro no necesita clave: corre en este teléfono con kokoro-js (modelo Kokoro-82M, gratis, código abierto). La primera vez descarga el modelo (~88 MB) y luego queda guardado; si no se puede cargar, Isis habla con la voz del teléfono.
+        La voz de Kokoro no necesita clave: corre en este teléfono con kokoro-js (modelo Kokoro-82M, gratis, código abierto). No se descarga sola: toca “Descargar voz de Isis” cuando quieras (~88 MB, una sola vez, mejor con Wi-Fi) y luego queda guardada; mientras tanto, o si no se puede cargar, Isis habla con la voz del teléfono.
       </p>
     </section>
   </main>
