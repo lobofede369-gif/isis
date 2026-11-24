@@ -11,13 +11,6 @@
   const LS_WHATSAPP = "isis_whatsapp_token";
   const LS_TEXTBEE = "isis_textbee_key";
   const LS_TEXTBEE_DEVICE = "isis_textbee_device";
-  const LS_AZURE = "isis_azure_key";
-  const LS_AZURE_REGION = "isis_azure_region";
-  const LS_AZURE_VOICE = "isis_azure_voice";
-  // Voz de Azure de por defecto: es-MX-DaliaNeural (femenina, español de
-  // México, neural). Región de por defecto: eastus.
-  const AZURE_DEFAULT_VOICE = "es-MX-DaliaNeural";
-  const AZURE_DEFAULT_REGION = "eastus";
   const LS_FACTS = "isis_facts";
   const LS_HISTORY = "isis_history";
   const LS_SUMMARY = "isis_summary";
@@ -58,8 +51,6 @@
       whatsappToken: (localStorage.getItem(LS_WHATSAPP) || "").trim(),
       textbeeKey: (localStorage.getItem(LS_TEXTBEE) || "").trim(),
       textbeeDevice: (localStorage.getItem(LS_TEXTBEE_DEVICE) || "").trim(),
-      azureKey: (localStorage.getItem(LS_AZURE) || "").trim(),
-      azureRegion: (localStorage.getItem(LS_AZURE_REGION) || "").trim(),
     };
   }
 
@@ -70,16 +61,12 @@
       whatsappToken,
       textbeeKey,
       textbeeDevice,
-      azureKey,
-      azureRegion,
     } = getKeys();
     const fState = $("cfg-fableai-state");
     const nState = $("cfg-n8n-state");
     const wState = $("cfg-whatsapp-state");
     const tState = $("cfg-textbee-state");
     const dState = $("cfg-textbee-device-state");
-    const aState = $("cfg-azure-state");
-    const rState = $("cfg-azure-region-state");
     fState.textContent = fableaiKey ? "Guardada ✓" : "Sin guardar";
     fState.classList.toggle("ok", !!fableaiKey);
     nState.textContent = n8nKey ? "Guardada ✓" : "Sin guardar";
@@ -95,16 +82,6 @@
         ? "Guardado ✓"
         : "Sin guardar (opcional)";
       dState.classList.toggle("ok", !!textbeeDevice);
-    }
-    if (aState) {
-      aState.textContent = azureKey ? "Guardada ✓" : "Sin guardar";
-      aState.classList.toggle("ok", !!azureKey);
-    }
-    if (rState) {
-      rState.textContent = azureRegion
-        ? `Guardada ✓ (${azureRegion})`
-        : "eastus (por defecto)";
-      rState.classList.toggle("ok", !!azureRegion);
     }
     keyBanner.hidden = !!fableaiKey;
   }
@@ -612,95 +589,115 @@
     sel.disabled = false;
   }
 
-  // --- voces de Azure AI Speech (cuando hay clave y región): se listan
-  // desde /api/voices, filtradas a español. Sin clave, el selector dice
-  // que falta y Isis usa la voz del teléfono.
-  let azureVoices = [];
-  let selectedAzureVoice =
-    (localStorage.getItem(LS_AZURE_VOICE) || "").trim() ||
-    AZURE_DEFAULT_VOICE;
-  function azureVoiceLabel(v) {
-    const gender =
-      v.ssmlGender === "Female"
-        ? "femenina"
-        : v.ssmlGender === "Male"
-          ? "masculina"
-          : "";
-    const langs = Array.isArray(v.languageCodes)
-      ? v.languageCodes.join(", ")
-      : "";
-    const bits = [langs, gender].filter(Boolean);
-    return bits.length ? `${v.name} · ${bits.join(" · ")}` : v.name;
+  // --- voz de Kokoro (gratis, corre en el navegador, sin clave ni
+  // servidor): kokoro-js (librería oficial de hexgrad, Apache 2.0) con
+  // ONNX Runtime Web. El modelo Kokoro-82M (cuantizado q8, ~88 MB) se
+  // descarga una sola vez desde Hugging Face y queda en la caché del
+  // navegador; la síntesis corre en el teléfono. Voces en español: solo
+  // 3 (ef_dora femenina por defecto, em_alex y em_santa masculinas).
+  // Si Kokoro no está listo o falla, Isis usa la voz del teléfono:
+  // nunca se queda muda.
+  const KOKORO_CDN_URL = "https://cdn.jsdelivr.net/npm/kokoro-js@1.2.1/+esm";
+  const KOKORO_MODEL_ID = "onnx-community/Kokoro-82M-v1.0-ONNX";
+  const LS_KOKORO_VOICE = "isis_kokoro_voice";
+  const KOKORO_DEFAULT_VOICE = "ef_dora";
+  const KOKORO_VOICES = [
+    { id: "ef_dora", label: "Dora · femenina" },
+    { id: "em_alex", label: "Alex · masculina" },
+    { id: "em_santa", label: "Santa · masculina (navideña)" },
+  ];
+  // Una oración puede tardar varios segundos en un teléfono modesto
+  // (Helio G85, 4 GB): 60 s por oración antes de rendirse y pasar a la
+  // voz del teléfono.
+  const KOKORO_GENERATE_TIMEOUT_MS = 60000;
+  // kokoroState: "idle" (aún no se intentó) | "loading" (descargando el
+  // modelo) | "ready" (lista para hablar) | "failed" (no se pudo cargar).
+  let kokoroState = "idle";
+  let kokoroTTS = null;
+  let kokoroLoadPromise = null;
+  let selectedKokoroVoice =
+    (localStorage.getItem(LS_KOKORO_VOICE) || "").trim() ||
+    KOKORO_DEFAULT_VOICE;
+  if (!KOKORO_VOICES.some((v) => v.id === selectedKokoroVoice)) {
+    selectedKokoroVoice = KOKORO_DEFAULT_VOICE;
   }
-  async function refreshAzureVoices() {
-    const sel = $("azure-voice-select");
-    const state = $("azure-voice-state");
-    if (!sel) return;
-    const key = (localStorage.getItem(LS_AZURE) || "").trim();
-    const region =
-      (localStorage.getItem(LS_AZURE_REGION) || "").trim() ||
-      AZURE_DEFAULT_REGION;
-    sel.innerHTML = "";
-    if (!key) {
-      azureVoices = [];
-      if (state)
-        state.textContent =
-          "Sin clave de Azure: Isis usa la voz del teléfono.";
-      sel.disabled = true;
-      const opt = document.createElement("option");
-      opt.textContent = "Falta la clave de Azure";
-      sel.appendChild(opt);
-      return;
-    }
-    if (state) state.textContent = "Cargando voces de Azure…";
-    sel.disabled = true;
-    try {
-      const res = await fetch("/api/voices", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ azureKey: key, azureRegion: region }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || !Array.isArray(data.voices)) {
-        throw new Error(data?.error || "no voices");
+
+  // Estado visible de la voz de Kokoro: una línea pequeña junto al orbe
+  // (mientras descarga la primera vez o si falló) y el estado del
+  // selector en Configuración.
+  function updateKokoroStatus() {
+    const status = $("kokoro-status");
+    if (status) {
+      if (kokoroState === "loading") {
+        status.hidden = false;
+        status.textContent = "Descargando la voz de Isis por primera vez…";
+      } else if (kokoroState === "failed") {
+        status.hidden = false;
+        status.textContent =
+          "La voz de Kokoro no se pudo cargar; Isis habla con la voz del teléfono.";
+      } else {
+        status.hidden = true;
+        status.textContent = "";
       }
-      // Solo español: es-MX, es-US y es-ES (la API trae todos los idiomas).
-      azureVoices = data.voices.filter(
-        (v) =>
-          v &&
-          v.name &&
-          Array.isArray(v.languageCodes) &&
-          v.languageCodes.some((lc) =>
-            ["es-mx", "es-us", "es-es"].includes(String(lc).toLowerCase())
-          )
-      );
-      if (azureVoices.length === 0) throw new Error("empty");
-      azureVoices.forEach((v) => {
-        const opt = document.createElement("option");
-        opt.value = v.name;
-        opt.textContent = azureVoiceLabel(v);
-        sel.appendChild(opt);
-      });
-      const saved = (localStorage.getItem(LS_AZURE_VOICE) || "").trim();
-      const pick =
-        azureVoices.find((v) => v.name === saved) ||
-        azureVoices.find((v) => v.name === AZURE_DEFAULT_VOICE) ||
-        azureVoices[0];
-      selectedAzureVoice = pick.name;
-      sel.value = pick.name;
-      sel.disabled = false;
-      if (state)
-        state.textContent = `${azureVoices.length} voces de Azure disponibles.`;
-    } catch (e) {
-      azureVoices = [];
-      sel.innerHTML = "";
-      const opt = document.createElement("option");
-      opt.textContent = "No se pudieron cargar las voces";
-      sel.appendChild(opt);
-      if (state)
-        state.textContent =
-          "No pude cargar las voces de Azure. Isis usa la voz del teléfono.";
     }
+    const state = $("kokoro-voice-state");
+    if (state) {
+      if (kokoroState === "loading") {
+        state.textContent =
+          "Descargando el modelo de voz… (primera vez, ~88 MB; luego queda guardado en el teléfono)";
+      } else if (kokoroState === "ready") {
+        state.textContent =
+          "Voz de Kokoro lista · corre en este teléfono, sin costo ni clave.";
+      } else if (kokoroState === "failed") {
+        state.textContent =
+          "Kokoro no se pudo cargar. Isis usa la voz del teléfono; toca “Probar voz” para reintentarlo.";
+      } else {
+        state.textContent =
+          "La voz de Kokoro se descarga sola al abrir Isis (primera vez).";
+      }
+    }
+  }
+
+  // Carga kokoro-js desde el CDN y el modelo desde Hugging Face. No
+  // bloquea nada: el chat y la voz del teléfono siguen funcionando
+  // mientras descarga. Se llama sola al abrir la página y se reintenta
+  // al tocar "Probar voz" si falló.
+  function initKokoro() {
+    if (kokoroState === "ready") return Promise.resolve(kokoroTTS);
+    if (kokoroState === "loading") return kokoroLoadPromise;
+    kokoroState = "loading";
+    updateKokoroStatus();
+    kokoroLoadPromise = (async () => {
+      try {
+        const mod = await import(KOKORO_CDN_URL);
+        const tts = await mod.KokoroTTS.from_pretrained(KOKORO_MODEL_ID, {
+          dtype: "q8",
+          device: "wasm",
+        });
+        kokoroTTS = tts;
+        kokoroState = "ready";
+      } catch (e) {
+        kokoroTTS = null;
+        kokoroState = "failed";
+      }
+      updateKokoroStatus();
+      return kokoroTTS;
+    })();
+    return kokoroLoadPromise;
+  }
+
+  // Llena el selector de Configuración con las 3 voces en español.
+  function populateKokoroSelect() {
+    const sel = $("kokoro-voice-select");
+    if (!sel) return;
+    sel.innerHTML = "";
+    KOKORO_VOICES.forEach((v) => {
+      const opt = document.createElement("option");
+      opt.value = v.id;
+      opt.textContent = v.label;
+      sel.appendChild(opt);
+    });
+    sel.value = selectedKokoroVoice;
   }
 
   // --- hablar: se respeta la puntuación. Cada respuesta se divide en
@@ -754,21 +751,137 @@
     const parts = clean.match(/[^.!?…]+[.!?…]["»”')]*|[^.!?…]+$/g) || [];
     return parts.map((s) => s.trim()).filter(Boolean);
   }
-  // --- audio de Azure AI Speech: un solo elemento <audio> reutilizado.
-  let azureAudio = null;
-  let azureGen = 0;
-  function stopAzureAudio() {
-    azureGen += 1;
-    if (azureAudio) {
+  // --- audio de Kokoro: un solo elemento <audio> reutilizado.
+  let kokoroAudio = null;
+  let kokoroAudioUrl = null;
+  // Resuelve la reproducción en curso (para cortar el audio al hablar
+  // algo nuevo: pause() no dispara "ended").
+  let kokoroPlayResolve = null;
+  function stopKokoroAudio() {
+    speakGen += 1; // invalida la síntesis en curso (oraciones pendientes)
+    if (kokoroPlayResolve) {
+      const r = kokoroPlayResolve;
+      kokoroPlayResolve = null;
+      r(false);
+    }
+    if (kokoroAudio) {
       try {
-        azureAudio.pause();
+        kokoroAudio.pause();
       } catch (e) {}
-      azureAudio.src = "";
-      azureAudio = null;
+      kokoroAudio.src = "";
+      kokoroAudio = null;
+    }
+    if (kokoroAudioUrl) {
+      try {
+        URL.revokeObjectURL(kokoroAudioUrl);
+      } catch (e) {}
+      kokoroAudioUrl = null;
     }
   }
+  function withTimeout(promise, ms) {
+    return Promise.race([
+      promise,
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("timeout")), ms)
+      ),
+    ]);
+  }
+  // Genera el audio de una oración con Kokoro. Devuelve el Blob (WAV,
+  // 24 kHz) o null si falló, si tardó demasiado o si ya se cortó la
+  // locución (nuevo mensaje).
+  async function generateKokoroSentence(sentence, gen) {
+    try {
+      const audio = await withTimeout(
+        kokoroTTS.generate(sentence, { voice: selectedKokoroVoice }),
+        KOKORO_GENERATE_TIMEOUT_MS
+      );
+      if (gen !== speakGen) return null;
+      if (!audio || typeof audio.toBlob !== "function") return null;
+      return audio.toBlob();
+    } catch (e) {
+      return null;
+    }
+  }
+  // Reproduce un Blob de audio de Kokoro. Devuelve true si sonó
+  // completo, false si se cortó o falló.
+  function playKokoroBlob(blob, gen) {
+    return new Promise((resolve) => {
+      let settled = false;
+      const done = (ok) => {
+        if (settled) return;
+        settled = true;
+        kokoroPlayResolve = null;
+        if (kokoroAudioUrl) {
+          try {
+            URL.revokeObjectURL(kokoroAudioUrl);
+          } catch (e) {}
+          kokoroAudioUrl = null;
+        }
+        resolve(ok);
+      };
+      let url = null;
+      try {
+        url = URL.createObjectURL(blob);
+      } catch (e) {
+        done(false);
+        return;
+      }
+      kokoroAudioUrl = url;
+      const audio = new Audio(url);
+      kokoroAudio = audio;
+      kokoroPlayResolve = (ok) => done(ok);
+      audio.onplay = () => {
+        if (gen !== speakGen) {
+          done(false);
+          return;
+        }
+        speakingNow = true;
+        orb.classList.add("speaking");
+        orb.classList.remove("listening");
+      };
+      audio.onended = () => {
+        kokoroAudio = null;
+        done(true);
+      };
+      audio.onerror = () => {
+        kokoroAudio = null;
+        done(false);
+      };
+      audio.play().catch(() => {
+        kokoroAudio = null;
+        done(false);
+      });
+    });
+  }
+  // Habla un texto con Kokoro, oración por oración, generando la
+  // siguiente mientras suena la actual (para no esperar todo el texto
+  // en un teléfono lento). Devuelve "" si habló todo, o el texto que
+  // quedó sin hablar (para que la voz del teléfono lo diga).
+  async function speakKokoro(text, gen) {
+    const sentences = splitSentences(text);
+    if (sentences.length === 0) return text;
+    let idx = 0;
+    let pending = generateKokoroSentence(sentences[0], gen);
+    while (idx < sentences.length) {
+      if (gen !== speakGen) return "";
+      const blob = await pending;
+      if (!blob) return sentences.slice(idx).join(" ");
+      const nextIdx = idx + 1;
+      if (nextIdx < sentences.length) {
+        pending = generateKokoroSentence(sentences[nextIdx], gen);
+      }
+      const played = await playKokoroBlob(blob, gen);
+      idx++;
+      if (!played) {
+        if (gen !== speakGen) return "";
+        return sentences.slice(idx).join(" ");
+      }
+    }
+    finishSpeaking();
+    return "";
+  }
   // Limpieza al terminar de hablar (sirve para la voz del teléfono y
-  // para Azure): se quita el estado "hablando" y vuelve la escucha.
+  // para Kokoro): se quita el estado "hablando" y vuelve la escucha.
   function finishSpeaking() {
     speakingNow = false;
     orb.classList.remove("speaking");
@@ -776,64 +889,26 @@
     setOrbStatus(idleStatus());
     setTimeout(maybeStartWake, 800);
   }
-  // speak(text, moodOverride): con clave de Azure usa esa voz
-  // natural; si no hay clave o Azure falla, usa la voz del teléfono
-  // como siempre. Isis nunca se queda muda. Para Azure la emoción
-  // la da la propia voz (no se toca pitch ni rate del audio).
+  // speak(text, moodOverride): con Kokoro lista usa esa voz; si Kokoro
+  // no está lista o falla (a la mitad o al inicio), usa la voz del
+  // teléfono con lo que falte. Isis nunca se queda muda. Con Kokoro la
+  // emoción la da la propia voz (no se toca pitch ni rate del audio).
   async function speak(text, moodOverride) {
     const clean = String(text || "").trim();
     if (!clean) return;
-    // Cortar lo que esté sonando (sea del teléfono o de Azure).
-    stopAzureAudio();
+    // Cortar lo que esté sonando (sea Kokoro o la voz del teléfono).
+    stopKokoroAudio();
     if ("speechSynthesis" in window) window.speechSynthesis.cancel();
     speakGen += 1;
-    const key = (localStorage.getItem(LS_AZURE) || "").trim();
-    const region =
-      (localStorage.getItem(LS_AZURE_REGION) || "").trim() ||
-      AZURE_DEFAULT_REGION;
-    if (key) {
-      const ok = await speakAzure(clean, key, region);
-      if (ok) return;
-      // Si Azure falló, se cae a la voz del teléfono.
+    const gen = speakGen;
+    if (kokoroState === "ready" && kokoroTTS) {
+      const remaining = await speakKokoro(clean, gen);
+      if (!remaining) return; // Kokoro habló todo.
+      // Kokoro falló a la mitad: el resto con la voz del teléfono.
+      speakPhone(remaining, moodOverride);
+      return;
     }
     speakPhone(clean, moodOverride);
-  }
-  async function speakAzure(text, key, region) {
-    try {
-      const res = await fetch("/api/tts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          text,
-          azureKey: key,
-          azureRegion: region,
-          voiceName: selectedAzureVoice || AZURE_DEFAULT_VOICE,
-        }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data.audioBase64) return false;
-      const gen = azureGen;
-      const audio = new Audio(`data:audio/mpeg;base64,${data.audioBase64}`);
-      azureAudio = audio;
-      audio.onplay = () => {
-        if (gen !== azureGen) return;
-        speakingNow = true;
-        orb.classList.add("speaking");
-        orb.classList.remove("listening");
-      };
-      const done = () => {
-        if (gen !== azureGen) return;
-        azureAudio = null;
-        finishSpeaking();
-      };
-      audio.onended = done;
-      audio.onerror = done;
-      await audio.play();
-      return true;
-    } catch (e) {
-      azureAudio = null;
-      return false;
-    }
   }
   // Voz del teléfono (speechSynthesis): habla el texto con la prosodia
   // del ánimo actual (o del ánimo que se le pase, como "alegre" para la
@@ -1794,29 +1869,20 @@
     const d = $("cfg-textbee-device")
       ? $("cfg-textbee-device").value.trim()
       : "";
-    const a = $("cfg-azure") ? $("cfg-azure").value.trim() : "";
-    const r = $("cfg-azure-region")
-      ? $("cfg-azure-region").value.trim()
-      : "";
     if (f) localStorage.setItem(LS_FABLEAI, f);
     if (n) localStorage.setItem(LS_N8N, n);
     if (w) localStorage.setItem(LS_WHATSAPP, w);
     if (t) localStorage.setItem(LS_TEXTBEE, t);
     if (d) localStorage.setItem(LS_TEXTBEE_DEVICE, d);
-    if (a) localStorage.setItem(LS_AZURE, a);
-    if (r) localStorage.setItem(LS_AZURE_REGION, r);
     $("cfg-fableai").value = "";
     $("cfg-n8n").value = "";
     $("cfg-whatsapp").value = "";
     if ($("cfg-textbee")) $("cfg-textbee").value = "";
     if ($("cfg-textbee-device")) $("cfg-textbee-device").value = "";
-    if ($("cfg-azure")) $("cfg-azure").value = "";
-    if ($("cfg-azure-region")) $("cfg-azure-region").value = "";
     const msg = $("config-msg");
     msg.hidden = false;
     msg.textContent = "Claves guardadas en este navegador.";
     refreshKeyUI();
-    refreshAzureVoices();
     loadOrlando();
   });
   $("btn-clear-config").addEventListener("click", () => {
@@ -1825,14 +1891,10 @@
     localStorage.removeItem(LS_WHATSAPP);
     localStorage.removeItem(LS_TEXTBEE);
     localStorage.removeItem(LS_TEXTBEE_DEVICE);
-    localStorage.removeItem(LS_AZURE);
-    localStorage.removeItem(LS_AZURE_REGION);
-    localStorage.removeItem(LS_AZURE_VOICE);
     const msg = $("config-msg");
     msg.hidden = false;
     msg.textContent = "Claves borradas de este navegador.";
     refreshKeyUI();
-    refreshAzureVoices();
     loadOrlando();
   });
 
@@ -1849,20 +1911,23 @@
       }
     });
   }
-  // --- selector de voz de Azure (Configuración): se llena desde
-  // /api/voices cuando hay clave y región. Al elegir, se guarda la voz.
-  const azureVoiceSelect = $("azure-voice-select");
-  if (azureVoiceSelect) {
-    azureVoiceSelect.addEventListener("change", () => {
-      if (!azureVoiceSelect.value) return;
-      selectedAzureVoice = azureVoiceSelect.value;
-      localStorage.setItem(LS_AZURE_VOICE, selectedAzureVoice);
+  // --- selector de voz de Kokoro (Configuración): las 3 voces en
+  // español. Al elegir, se guarda.
+  const kokoroVoiceSelect = $("kokoro-voice-select");
+  if (kokoroVoiceSelect) {
+    kokoroVoiceSelect.addEventListener("change", () => {
+      if (!kokoroVoiceSelect.value) return;
+      selectedKokoroVoice = kokoroVoiceSelect.value;
+      localStorage.setItem(LS_KOKORO_VOICE, selectedKokoroVoice);
     });
   }
   const testVoiceBtn = $("btn-test-voice");
   if (testVoiceBtn) {
     testVoiceBtn.addEventListener("click", () => {
       stopWake(); // que no se escuche a sí misma y se active sola
+      // Si Kokoro falló (o aún no se intentó), reintenta la descarga;
+      // mientras tanto Isis habla con la voz del teléfono.
+      if (kokoroState === "failed" || kokoroState === "idle") initKokoro();
       speak(
         "¡Hola, Santiago! Me da mucho gusto verte, ¿en qué te ayudo hoy?",
         "alegre"
@@ -1881,7 +1946,11 @@
     window.speechSynthesis.addEventListener("voiceschanged", refreshVoices);
   }
   refreshVoices();
-  refreshAzureVoices();
+  populateKokoroSelect();
+  updateKokoroStatus();
+  // Kokoro se descarga sola en segundo plano al abrir Isis (primera
+  // vez ~88 MB; luego queda en caché). El chat no espera por ella.
+  setTimeout(initKokoro, 1000);
   updateWakeUI();
   // Conversación plegable: empieza colapsada (solo la vista previa).
   if (chatToggle) {

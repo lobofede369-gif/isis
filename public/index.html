@@ -61,6 +61,7 @@
         <p id="orb-status" class="orb-status">Toca el círculo para hablar</p>
         <p id="orb-mood" class="orb-mood" hidden></p>
       </div>
+      <p id="kokoro-status" class="voice-note" hidden></p>
       <div id="wake-row" class="wake-row">
         <label class="wake-toggle">
           <input type="checkbox" id="wake-toggle" checked />
@@ -206,27 +207,17 @@
         <input id="cfg-textbee-device" type="text" placeholder="Pégalo aquí… (puedes dejarlo vacío)" autocomplete="off" />
         <span id="cfg-textbee-device-state" class="field-state">Sin guardar (opcional)</span>
       </label>
-      <label class="field">
-        <span>Clave de Azure (voz natural)</span>
-        <input id="cfg-azure" type="password" placeholder="Pégala aquí…" autocomplete="off" />
-        <span id="cfg-azure-state" class="field-state">Sin guardar</span>
-      </label>
-      <label class="field">
-        <span>Región de Azure (donde quedó tu recurso de Speech)</span>
-        <input id="cfg-azure-region" type="text" placeholder="eastus" autocomplete="off" />
-        <span id="cfg-azure-region-state" class="field-state">eastus (por defecto)</span>
-      </label>
       <div class="field">
-        <span>Voz de Isis</span>
+        <span>Voz de Isis (Kokoro, gratis)</span>
         <div class="voice-row">
-          <select id="voice-select" aria-label="Voz de Isis"></select>
+          <select id="voice-select" aria-label="Voz del teléfono"></select>
           <button id="btn-test-voice" class="small-btn" type="button">Probar voz</button>
         </div>
         <span id="voice-state" class="field-state">Buscando voces en español…</span>
         <div class="voice-row">
-          <select id="azure-voice-select" aria-label="Voz de Azure"></select>
+          <select id="kokoro-voice-select" aria-label="Voz de Kokoro"></select>
         </div>
-        <span id="azure-voice-state" class="field-state">Sin clave de Azure.</span>
+        <span id="kokoro-voice-state" class="field-state">La voz de Kokoro se descarga sola al abrir Isis (primera vez).</span>
       </div>
       <div class="config-actions">
         <button id="btn-save-config" class="primary-btn">Guardar claves</button>
@@ -238,7 +229,7 @@
         La clave de API de n8n se crea en n8n → Settings → n8n API.
         El token de WhatsApp se consigue en Meta for Developers → tu app «PCN Bot» → WhatsApp → API Setup → Token de acceso.
         La clave de TextBee y el ID del dispositivo se consiguen en textbee.dev: crea una cuenta, instala la app en tu teléfono, agrega el dispositivo escaneando el QR y crea una API key. Sin el ID, Isis usa tu dispositivo por defecto.
-        La clave de Azure y su región se consiguen en portal.azure.com: crea un recurso "Speech" en el plan gratis (Free F0), copia la clave y la región del recurso. Plan gratis: 500,000 caracteres al mes de voces neurales (~11 horas), con límite de 20 peticiones por minuto.
+        La voz de Kokoro no necesita clave: corre en este teléfono con kokoro-js (modelo Kokoro-82M, gratis, código abierto). La primera vez descarga el modelo (~88 MB) y luego queda guardado; si no se puede cargar, Isis habla con la voz del teléfono.
       </p>
     </section>
   </main>
