@@ -704,6 +704,42 @@ main { max-width: 640px; margin: 0 auto; padding: 8px 16px 32px; position: relat
 .dec-list.cons li::marker { color: var(--danger); }
 .dec-rec { margin: 12px 0 0; line-height: 1.5; }
 
+/* ---------------------------------------------------------- Confirmación de El Mitote */
+.confirm-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+
+/* ---------------------------------------------------------- Música (Spotify) */
+.music-controls { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 6px; }
+.music-results li button {
+  background: none; border: none; color: var(--text);
+  font: inherit; text-align: left; cursor: pointer; padding: 0;
+}
+.music-results li button:hover { color: var(--neon-bright); }
+.music-results .loading {
+  font-family: var(--font-display);
+  color: var(--neon);
+  letter-spacing: 3px;
+  text-shadow: 0 0 12px var(--neon-glow);
+}
+
+/* ---------------------------------------------------------- Recordatorios */
+.reminder-alert {
+  display: flex; align-items: center; gap: 10px;
+  background: rgba(0, 255, 170, 0.1);
+  border: 1px solid rgba(0, 255, 170, 0.55);
+  border-radius: 12px;
+  padding: 12px 14px; margin-top: 14px;
+  box-shadow: 0 0 18px rgba(0, 255, 170, 0.15);
+  color: #c8ffe9;
+}
+
+/* ---------------------------------------------------------- Dinero */
+.money-result { margin-top: 14px; }
+
+/* El atributo hidden debe ocultar de verdad: cualquier display de
+   autor (flex en .alert-banner y .reminder-alert) anularía el estilo
+   del navegador que esconde los elementos con hidden. */
+[hidden] { display: none !important; }
+
 /* ---------------------------------------------------------- Dock mínimo (escribir + enviar + micrófono) */
 .dock-min {
   display: flex; align-items: center; gap: 10px;
