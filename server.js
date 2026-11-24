@@ -10,6 +10,12 @@
 //   POST /api/orlando   -> { n8nKey }
 //   GET  /api/weather   -> ?lat=&lon= (por defecto Apodaca, NL)
 //   POST /api/analyze   -> { fableaiKey, n8nKey, facts[], summary }
+//   POST /api/vision    -> { image, question, fableaiKey } — escaneo
+//   visual JARVIS: Claude analiza una foto de la cámara del teléfono.
+//   POST /api/systems   -> { n8nKey, battery? } — diagnóstico JARVIS:
+//   Isis, Orlando, El Mitote y el teléfono, con alertas.
+//   POST /api/decide    -> { decision, fableaiKey, facts[], summary } —
+//   análisis de una decisión: veredicto, pros, contras, recomendación.
 //   POST /api/send-whatsapp -> { to, message, whatsappToken }
 //   POST /api/send-sms -> { to, message, textbeeKey, deviceId? } — SMS desde
 //   su propio número vía TextBee (app en su moto g13; plan gratis: 300/mes, 50/día).
@@ -24,12 +30,14 @@ const path = require("path");
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(express.json({ limit: "1mb" }));
+app.use(express.json({ limit: "10mb" })); // las fotos del escaneo visual llegan en base64
 app.use(express.static(path.join(__dirname, "public")));
 
-const FABLEAI_URL = "https://api.fableaiapi.com/v1/chat/completions";
+const FABLEAI_URL =
+  process.env.FABLEAI_URL || "https://api.fableaiapi.com/v1/chat/completions";
 const FABLEAI_MODEL = "claude-sonnet-5-5";
-const N8N_BASE = "https://pcn-bot.app.n8n.cloud/api/v1";
+const N8N_BASE =
+  process.env.N8N_BASE || "https://pcn-bot.app.n8n.cloud/api/v1";
 // WhatsApp Business Cloud API — número del bot (Orlando Rangel).
 const WHATSAPP_API =
   "https://graph.facebook.com/v21.0/1409692605565312/messages";
@@ -321,6 +329,7 @@ const CHAT_SYSTEM = [
   "Hay dos cosas que NUNCA haces por voz: cambiar la contraseña del propietario y la recuperación de emergencia. La contraseña del propietario no es una función de la app (es una variable del servidor) y si se cambia por error Santiago pierde el acceso a su propio sistema; esas dos se hacen a mano, y si te las pide, dile que se hacen a mano en la app.",
   "Si te paso el resultado de una acción de El Mitote, responde SOLO con el siguiente JSON (mitote o mitote_confirm) si falta un paso para completar lo que Santiago pidió; si ya está completo, responde con el resumen final para Santiago, en español y breve, con el marcador de ánimo.",
   "La impresión física no la puedes hacer: el servidor del restaurante no tiene impresora. Lo que sí puedes es generar la pre-cuenta o el ticket en PDF (accounts_prebill_pdf, accounts_ticket_pdf) y yo le abro el PDF a Santiago para que lo imprima.",
+  "Funciones JARVIS de Isis (módulos del menú ☰): si Santiago te pide que veas algo con la cámara, que revises los sistemas o que analices una decisión, no lo hagas tú a ciegas: dile que lo haga desde el módulo Escanear (cámara), Sistemas (reporte) o Análisis (analizar decisión) del menú, o que te lo pida así: '¿qué ves?', 'reporte de sistemas', 'analízame esta decisión'.",
   "Si no te pide mandar un mensaje ni operar El Mitote, responde normal, nunca con JSON.",
 ].join(" ");
 
@@ -402,6 +411,53 @@ async function callClaude(apiKey, messages) {
       redirect: "error",
     },
     60000
+  );
+  if (res.status === 401) {
+    const err = new Error("KEY_REJECTED");
+    err.status = 401;
+    throw err;
+  }
+  if (!res.ok) {
+    const err = new Error(`FableAI respondió con ${res.status}`);
+    err.status = res.status;
+    throw err;
+  }
+  const data = await res.json();
+  const reply = data?.choices?.[0]?.message?.content?.trim();
+  if (!reply) throw new Error("FableAI devolvió una respuesta vacía");
+  return reply;
+}
+
+// Llama a Claude con una imagen (visión): mismo endpoint OpenAI-
+// compatible de FableAI, con el mensaje en formato multimodal
+// (texto + image_url con data URL). La clave llega por parámetro.
+async function callClaudeVision(apiKey, systemPrompt, question, imageDataUrl) {
+  const res = await fetchWithTimeout(
+    FABLEAI_URL,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: FABLEAI_MODEL,
+        messages: [
+          { role: "system", content: systemPrompt },
+          {
+            role: "user",
+            content: [
+              { type: "text", text: question },
+              { type: "image_url", image_url: { url: imageDataUrl } },
+            ],
+          },
+        ],
+        temperature: 0.7,
+        max_tokens: 1000,
+      }),
+      redirect: "error",
+    },
+    90000
   );
   if (res.status === 401) {
     const err = new Error("KEY_REJECTED");
@@ -531,6 +587,72 @@ app.post("/api/chat", async (req, res) => {
     return res.status(502).json({
       error:
         "No pude hablar con Claude ahora mismo. Inténtalo de nuevo en un momento.",
+      claudeLive: false,
+    });
+  }
+});
+
+// Visión de Isis: Claude analiza una foto de la cámara del teléfono
+// (escaneo JARVIS: "Isis, ¿qué ves?"). La foto llega como data URL
+// JPEG (el cliente la reduce a 1024 px antes de mandarla); la clave de
+// FableAI viene en la petición, como en /api/chat, y nunca se guarda.
+const VISION_SYSTEM = [
+  "Eres Isis, la asistente personal de Santiago. Estás viendo una foto que acaba de tomar con su teléfono: descríbele lo que ves.",
+  "Habla siempre en español (es-MX, informal, de 'tú'). Directa, cálida y con chispa, como JARVIS cuando escanea algo: primero lo que ves, luego lo que significa para él.",
+  "Describe lo que hay en la foto con detalle útil: qué objetos, personas, textos o números se ven, y si hay algo que llame la atención (un error, un riesgo, algo que no cuadra). Si hay texto en la foto, léelo tal cual.",
+  "Responde corto: 3 a 6 líneas como máximo. Sin muros de texto.",
+  "Nunca inventes lo que no se ve en la foto: si algo no se distingue, dilo.",
+  "Al final de tu respuesta, en una línea aparte, pon tu estado de ánimo así: [ánimo: alegre|frustrada|enojada|preocupada|orgullosa|bromeando|tranquila]. Usa solo una de esas palabras. Ese marcador no se lee en voz alta, solo se muestra en pantalla junto al orbe.",
+].join(" ");
+
+app.post("/api/vision", async (req, res) => {
+  const { image, question, fableaiKey } = req.body || {};
+  if (!fableaiKey || !String(fableaiKey).trim()) {
+    return res.status(400).json({
+      error:
+        "Para ver la foto necesito tu clave de FableAI en Configuración.",
+      claudeLive: false,
+    });
+  }
+  let dataUrl = typeof image === "string" ? image.trim() : "";
+  if (!dataUrl) {
+    return res
+      .status(400)
+      .json({ error: "No llegó ninguna foto. Tómala de nuevo." });
+  }
+  // El cliente manda data URL JPEG; si llega base64 suelto, se asume JPEG.
+  if (!/^data:image\/[a-zA-Z]+;base64,/.test(dataUrl)) {
+    if (/^[A-Za-z0-9+/=\r\n]+$/.test(dataUrl)) {
+      dataUrl = "data:image/jpeg;base64," + dataUrl.replace(/\s+/g, "");
+    } else {
+      return res
+        .status(400)
+        .json({ error: "Esa foto no se pudo leer. Tómala de nuevo." });
+    }
+  }
+  if (dataUrl.length > 8 * 1024 * 1024) {
+    return res
+      .status(400)
+      .json({ error: "La foto es demasiado pesada. Tómala de nuevo." });
+  }
+  const q = String(question || "").trim() || "¿Qué ves en esta foto?";
+  try {
+    const analysis = await callClaudeVision(
+      String(fableaiKey).trim(),
+      VISION_SYSTEM,
+      q,
+      dataUrl
+    );
+    return res.json({ analysis, claudeLive: true });
+  } catch (err) {
+    if (err.status === 401) {
+      return res.status(401).json({
+        error: "La clave fue rechazada, revísala en Configuración.",
+        claudeLive: false,
+      });
+    }
+    return res.status(502).json({
+      error: "No pude analizar la foto ahora mismo. Inténtalo de nuevo.",
       claudeLive: false,
     });
   }
@@ -908,6 +1030,374 @@ app.post("/api/analyze", async (req, res) => {
       claudeLive: false,
     });
   }
+});
+
+// ---------------------------------------------------------------- decisiones
+// Análisis de una decisión: Claude devuelve un veredicto estructurado
+// (pros, contras, recomendación) en JSON. Si no devuelve JSON válido,
+// su texto se usa como veredicto.
+const DECIDE_SYSTEM = [
+  "Eres Isis, la asistente personal de Santiago. Te pide analizar una decisión y darle un veredicto claro.",
+  "Habla siempre en español (es-MX, informal, de 'tú'). Directa y con chispa, sin rodeos.",
+  "Responde SOLO con un JSON válido, sin texto antes ni después, con esta forma exacta:",
+  '{"verdict": "una frase con tu veredicto", "pros": ["pro 1", "pro 2"], "cons": ["contra 1", "contra 2"], "recommendation": "una frase con lo que le recomiendas hacer"}',
+  "Máximo 4 pros y 4 contras, cada uno en una frase corta. El veredicto y la recomendación en una frase cada uno. Nada de muros de texto.",
+  "Usa solo los datos que te pasen: nunca inventes números ni hechos. Si te falta un dato clave para decidir, dilo en la recomendación.",
+].join(" ");
+
+function extractDecisionJson(text) {
+  const raw = String(text || "");
+  const start = raw.indexOf("{");
+  const end = raw.lastIndexOf("}");
+  if (start < 0 || end <= start) return null;
+  try {
+    return JSON.parse(raw.slice(start, end + 1));
+  } catch (e) {
+    return null;
+  }
+}
+function cleanDecisionField(v) {
+  return String(v || "")
+    .replace(/\[ánimo:\s*[a-záéíóúñ]+\s*\]/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+app.post("/api/decide", async (req, res) => {
+  const { decision, fableaiKey, facts, summary } = req.body || {};
+  const d = String(decision || "").trim();
+  if (!d) {
+    return res
+      .status(400)
+      .json({ error: "Dime qué decisión quieres analizar." });
+  }
+  if (!fableaiKey || !String(fableaiKey).trim()) {
+    return res.status(400).json({
+      error:
+        "Para analizar la decisión necesito tu clave de FableAI en Configuración.",
+      claudeLive: false,
+    });
+  }
+  const prompt =
+    `Analiza esta decisión de Santiago y dame tu veredicto: "${d}"\n\n` +
+    (Array.isArray(facts) && facts.length
+      ? `Lo que Isis ha aprendido de Santiago:\n${facts
+          .map((f) => `- ${String(f).trim()}`)
+          .filter(Boolean)
+          .join("\n")}\n\n`
+      : "") +
+    (summary && String(summary).trim()
+      ? `Resumen de lo que han hablado:\n${String(summary).trim().slice(0, 800)}\n\n`
+      : "") +
+    "Responde SOLO con el JSON (verdict, pros, cons, recommendation).";
+  try {
+    const raw = await callClaude(String(fableaiKey).trim(), [
+      { role: "system", content: DECIDE_SYSTEM },
+      { role: "user", content: prompt },
+    ]);
+    const parsed = extractDecisionJson(raw);
+    if (parsed && typeof parsed === "object") {
+      const pros = (Array.isArray(parsed.pros) ? parsed.pros : [])
+        .map(cleanDecisionField)
+        .filter(Boolean)
+        .slice(0, 4);
+      const cons = (Array.isArray(parsed.cons) ? parsed.cons : [])
+        .map(cleanDecisionField)
+        .filter(Boolean)
+        .slice(0, 4);
+      return res.json({
+        decision: d,
+        verdict: cleanDecisionField(parsed.verdict),
+        pros,
+        cons,
+        recommendation: cleanDecisionField(parsed.recommendation),
+        claudeLive: true,
+      });
+    }
+    // Claude no devolvió JSON: su texto se usa como veredicto.
+    return res.json({
+      decision: d,
+      verdict: cleanDecisionField(raw).slice(0, 600),
+      pros: [],
+      cons: [],
+      recommendation: "",
+      raw: true,
+      claudeLive: true,
+    });
+  } catch (err) {
+    if (err.status === 401) {
+      return res.status(401).json({
+        error: "La clave fue rechazada, revísala en Configuración.",
+        claudeLive: false,
+      });
+    }
+    return res.status(502).json({
+      error: "No pude analizar la decisión ahora mismo. Inténtalo de nuevo.",
+      claudeLive: false,
+    });
+  }
+});
+
+// ---------------------------------------------------------------- sistemas
+// Diagnóstico JARVIS: Isis revisa sus propios sistemas (ella misma,
+// Orlando, El Mitote y el teléfono) y devuelve un reporte consolidado
+// con alertas. Cada revisión se degrada sola si falla: el reporte
+// siempre responde, nunca 500 por un sistema caído.
+async function mitoteGet(path, ms) {
+  const token = (process.env.MITOTE_API_TOKEN || "").trim();
+  if (!token) return { ok: false, status: 503, noToken: true };
+  try {
+    const res = await fetchWithTimeout(
+      MITOTE_API_BASE + path,
+      { headers: { Authorization: `Bearer ${token}` } },
+      ms
+    );
+    let data = null;
+    try {
+      data = await res.json();
+    } catch (e) {}
+    return { ok: res.ok, status: res.status, data };
+  } catch (e) {
+    return { ok: false, status: 0, timeout: true };
+  }
+}
+function isTableOccupied(t) {
+  if (!t || typeof t !== "object") return false;
+  if (t.occupied === true) return true;
+  if (t.account_id || t.account) return true;
+  const s = String(t.status || t.estado || "").toLowerCase();
+  return (
+    s === "occupied" || s === "ocupada" || s === "ocupado" || s === "busy"
+  );
+}
+async function checkMitote() {
+  // Salud y mesas en paralelo: la primera llamada puede tardar si el
+  // restaurante estaba dormido (plan Free).
+  const [health, tables] = await Promise.allSettled([
+    (async () => {
+      const h1 = await mitoteGet("/health", 15000);
+      if (h1.ok) return h1;
+      return mitoteGet("/api/health", 15000);
+    })(),
+    mitoteGet("/api/tables", 25000),
+  ]);
+  const h =
+    health.status === "fulfilled"
+      ? health.value
+      : { ok: false, status: 0, timeout: true };
+  const tb =
+    tables.status === "fulfilled"
+      ? tables.value
+      : { ok: false, status: 0, timeout: true };
+  if (h.noToken || tb.noToken) {
+    return {
+      status: "not_configured",
+      detail:
+        "La conexión con El Mitote no está configurada en el servidor.",
+    };
+  }
+  const tablesArr = tb.ok && Array.isArray(tb.data) ? tb.data : null;
+  const total = tablesArr ? tablesArr.length : null;
+  const occupied = tablesArr
+    ? tablesArr.filter(isTableOccupied).length
+    : null;
+  if (tablesArr) {
+    return {
+      status: "ok",
+      detail:
+        occupied !== null
+          ? `${occupied} de ${total} mesas ocupadas`
+          : `${total} mesas`,
+      database:
+        h.ok && h.data && h.data.database ? String(h.data.database) : null,
+      tablesTotal: total,
+      tablesOccupied: occupied,
+    };
+  }
+  if (h.ok) {
+    return {
+      status: "ok",
+      detail: "El restaurante responde, pero no se pudieron contar las mesas.",
+      database:
+        h.data && h.data.database ? String(h.data.database) : null,
+    };
+  }
+  if (h.timeout || tb.timeout) {
+    return {
+      status: "waking",
+      detail:
+        "El servidor del restaurante estaba dormido y está despertando; reintenta en un momento.",
+    };
+  }
+  return {
+    status: "down",
+    detail: "El servidor del restaurante no responde.",
+  };
+}
+
+app.post("/api/systems", async (req, res) => {
+  const { n8nKey, battery } = req.body || {};
+  const uptimeMin = Math.max(1, Math.round(process.uptime() / 60));
+  const [orlandoRes, mitoteRes] = await Promise.allSettled([
+    (async () => {
+      if (!n8nKey || !String(n8nKey).trim()) {
+        return {
+          source: "last_known",
+          live: false,
+          executionsUsed: ORLANDO_LAST_KNOWN.executionsUsed,
+          executionsTotal: ORLANDO_LAST_KNOWN.executionsTotal,
+          executionsFailed: ORLANDO_LAST_KNOWN.executionsFailed,
+          workflowActive: ORLANDO_LAST_KNOWN.workflowActive,
+          trialEnds: ORLANDO_LAST_KNOWN.trialEnds,
+        };
+      }
+      try {
+        const live = await fetchOrlandoLive(String(n8nKey).trim());
+        return {
+          source: "live",
+          live: true,
+          executionsUsed: live.total,
+          executionsTotal: ORLANDO_LAST_KNOWN.executionsTotal,
+          executionsFailed: live.failed,
+          workflowActive: live.workflowActive,
+          trialEnds: ORLANDO_LAST_KNOWN.trialEnds,
+        };
+      } catch (e) {
+        return {
+          source: "unknown",
+          live: false,
+          error: true,
+          executionsUsed: ORLANDO_LAST_KNOWN.executionsUsed,
+          executionsTotal: ORLANDO_LAST_KNOWN.executionsTotal,
+          executionsFailed: ORLANDO_LAST_KNOWN.executionsFailed,
+          workflowActive: ORLANDO_LAST_KNOWN.workflowActive,
+          trialEnds: ORLANDO_LAST_KNOWN.trialEnds,
+        };
+      }
+    })(),
+    checkMitote(),
+  ]);
+  const orlando =
+    orlandoRes.status === "fulfilled"
+      ? orlandoRes.value
+      : {
+          source: "unknown",
+          error: true,
+          executionsUsed: ORLANDO_LAST_KNOWN.executionsUsed,
+          executionsTotal: ORLANDO_LAST_KNOWN.executionsTotal,
+          executionsFailed: ORLANDO_LAST_KNOWN.executionsFailed,
+          workflowActive: null,
+        };
+  const mitote =
+    mitoteRes.status === "fulfilled"
+      ? mitoteRes.value
+      : { status: "down", detail: "No se pudo revisar El Mitote." };
+
+  const alerts = [];
+  // Orlando
+  let orlandoStatus = "ok";
+  let orlandoDetail = `${orlando.executionsUsed} de ${orlando.executionsTotal} ejecuciones usadas, ${orlando.executionsFailed} fallidas`;
+  if (orlando.source === "live") orlandoDetail += " (en vivo)";
+  else if (orlando.source === "last_known")
+    orlandoDetail += " (último dato conocido)";
+  else orlandoDetail += " (no se pudo revisar en vivo)";
+  if (orlando.workflowActive === false) {
+    orlandoStatus = "down";
+    alerts.push({
+      system: "orlando",
+      message: "El workflow de Orlando está pausado en n8n.",
+      action:
+        "Actívalo en n8n (workflow 'WhatsApp PCN - Respuestas naturales').",
+    });
+  } else if (orlando.executionsUsed >= 900) {
+    orlandoStatus = "warn";
+    alerts.push({
+      system: "orlando",
+      message: `Quedan ${orlando.executionsTotal - orlando.executionsUsed} ejecuciones de n8n de la prueba (ya van ${orlando.executionsUsed} de ${orlando.executionsTotal}).`,
+      action:
+        "Decide si pagas el plan Starter o migras el bot a Render antes del 3 de diciembre.",
+    });
+  } else if (orlando.source === "unknown") {
+    orlandoStatus = "unknown";
+  }
+  // El Mitote
+  const mitoteStatus =
+    mitote.status === "ok"
+      ? "ok"
+      : mitote.status === "waking"
+        ? "warn"
+        : "down";
+  if (mitote.status === "down") {
+    alerts.push({
+      system: "mitote",
+      message: "El servidor de El Mitote no responde.",
+      action: "Revisa el servicio el-mitote-comandas en Render.",
+    });
+  } else if (mitote.status === "not_configured") {
+    alerts.push({
+      system: "mitote",
+      message: "La conexión con El Mitote no está configurada en el servidor.",
+      action: "Pon MITOTE_API_TOKEN en el servicio de Isis en Render.",
+    });
+  }
+  // Teléfono (batería, si el cliente la mandó)
+  let phoneStatus = "ok";
+  let phoneDetail = "Sin datos de batería.";
+  const b = battery && typeof battery === "object" ? battery : null;
+  if (b && typeof b.level === "number") {
+    const pct = Math.round(b.level * 100);
+    phoneDetail = `Batería ${pct}%${b.charging ? " (cargando)" : ""}`;
+    if (pct < 20 && !b.charging) {
+      phoneStatus = "warn";
+      alerts.push({
+        system: "phone",
+        message: `La batería del teléfono está en ${pct}%.`,
+        action:
+          "Ponlo a cargar para que Isis y TextBee no se queden sin teléfono.",
+      });
+    }
+  }
+  const hasWarnings = [orlandoStatus, mitoteStatus, phoneStatus].some(
+    (s) => s === "warn" || s === "unknown"
+  );
+  const verdict =
+    alerts.length === 0
+      ? hasWarnings
+        ? "Todo operando, con avisos menores."
+        : "Todos los sistemas operando."
+      : alerts.length === 1
+        ? `Hay 1 alerta: ${alerts[0].message}`
+        : `Hay ${alerts.length} alertas: ${alerts
+            .map((a) => a.message)
+            .join(" ")}`;
+  return res.json({
+    ok: true,
+    verdict,
+    checkedAt: new Date().toISOString(),
+    checks: {
+      isis: {
+        status: "ok",
+        detail: `En vivo · despierta desde hace ${uptimeMin} min`,
+      },
+      orlando: {
+        status: orlandoStatus,
+        detail: orlandoDetail,
+        executionsUsed: orlando.executionsUsed,
+        executionsTotal: orlando.executionsTotal,
+        executionsFailed: orlando.executionsFailed,
+        workflowActive: orlando.workflowActive,
+        source: orlando.source,
+      },
+      mitote: {
+        status: mitoteStatus,
+        detail: mitote.detail,
+        tablesTotal: mitote.tablesTotal ?? null,
+        tablesOccupied: mitote.tablesOccupied ?? null,
+      },
+      phone: { status: phoneStatus, detail: phoneDetail },
+    },
+    alerts,
+  });
 });
 
 // ---------------------------------------------------------------- el mitote

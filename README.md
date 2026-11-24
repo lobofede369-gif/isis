@@ -15,8 +15,9 @@ demás vive en el **botón hamburguesa ☰** (arriba a la izquierda), que
 abre un menú lateral con todos los módulos: **Configuración** (claves),
 **Voz de Isis** (voz del teléfono, voz de Kokoro, descarga de Kokoro,
 "Probar voz" y escucha continua), **Memoria** (lo aprendido, resumen y
-respaldo), **Contactos**, **Orlando · Bot PCN** y **Análisis**. Elegir
-un módulo cierra el menú y lo abre en pantalla completa; "← Volver" (o
+respaldo), **Contactos**, **Orlando · Bot PCN**, **Análisis** (incluye el
+modo "Analizar decisión"), **Escanear** (cámara y visión) y **Sistemas**
+(diagnóstico JARVIS). Elegir un módulo cierra el menú y lo abre en
 la tecla Escape) lo cierra y vuelve a la pantalla principal. Tocar
 fuera del menú también lo cierra.
 
@@ -78,6 +79,33 @@ la pantalla principal se reubicó dentro del menú.
   NL por defecto. Nunca culpan a la clave de Claude.
 - **Análisis**: analiza el entorno (Orlando, reclutadores, decisiones
   pendientes) y recomienda qué hacer.
+- **Funciones JARVIS** (estilo JARVIS, en el menú ☰ o por voz):
+  - **Escaneo visual** ("Isis, ¿qué ves?" / menú ☰ → Escanear): abre la
+    cámara trasera del teléfono (`<input type="file" capture="environment">`),
+    toma una foto y Claude la analiza en español (`POST /api/vision` con
+    `image_url`). La foto se reduce a 1024 px (JPEG) antes de mandarla;
+    Isis dice el análisis en voz alta y lo muestra en el chat. Si algo no
+    se distingue en la foto, Isis lo dice en vez de inventarlo.
+  - **Diagnóstico de sistemas** ("Isis, reporte de sistemas" / menú ☰ →
+    Sistemas): `POST /api/systems` junta la salud de Isis misma, de
+    Orlando (en vivo con la clave de n8n, o último dato conocido sin
+    ella), de El Mitote (salud + conteo de mesas) y la batería del
+    teléfono (`navigator.getBattery`). Isis lo presenta con un veredicto
+    claro estilo JARVIS ("Todos los sistemas operando" o lista lo que
+    falla) por voz y en chat, no con un muro de texto.
+  - **Alertas proactivas**: Isis revisa los sistemas sola al abrir la
+    app (una vez, en segundo plano, sin bloquear) y cada vez que se pide
+    un reporte. Si algo está mal (Orlando caído o pausado, El Mitote sin
+    responder, ejecuciones de n8n casi agotadas, batería baja), muestra
+    una tarjeta de alerta en la pantalla principal y se lo dice por voz
+    o en la línea de estado, con el problema y qué hacer. **No es un
+    servicio en segundo plano**: en Render Free Isis se duerme y no puede
+    vigilar sola; la revisión es al abrir la app y bajo demanda.
+  - **Análisis de decisiones** (menú ☰ → Análisis → "Analizar decisión"
+    / voz: "Isis, analízame esta decisión…"): Claude analiza la decisión
+    con lo que Isis sabe de Santiago (hechos y resumen) y devuelve un
+    veredicto estructurado y corto: pros, contras y recomendación
+    (`POST /api/decide`). Sin muros de texto.
 - **Aprendizaje**: "Lo que Isis ha aprendido" guarda hechos en el navegador;
   se le puede enseñar y hacer que olvide cualquiera. Isis también aprende
   sola de la conversación: cuando aparece algo que vale la pena recordar
@@ -256,6 +284,9 @@ cada llamada y las usa solo para hablar con FableAI / n8n.
 | POST | `/api/orlando` | `{ n8nKey }` — estado de Orlando |
 | GET | `/api/weather?lat=&lon=` | Clima actual (Open-Meteo) |
 | POST | `/api/analyze` | `{ fableaiKey, n8nKey, facts[], summary }` |
+| POST | `/api/vision` | `{ image (data URL JPEG), question, fableaiKey }` — Claude analiza una foto de la cámara (escaneo JARVIS) |
+| POST | `/api/systems` | `{ n8nKey, battery? }` — diagnóstico consolidado: Isis, Orlando, El Mitote, teléfono; devuelve veredicto y alertas |
+| POST | `/api/decide` | `{ decision, fableaiKey, facts[], summary }` — análisis de una decisión: veredicto, pros, contras, recomendación |
 | POST | `/api/send-whatsapp` | `{ to, message, whatsappToken }` — manda un texto por WhatsApp desde el bot |
 | POST | `/api/send-sms` | `{ to, message, textbeeKey, deviceId? }` — manda un SMS desde su número (TextBee) |
 | POST | `/api/send-sms` | `{ to, message, textbeeKey }` — manda un SMS por TextBee desde tu número |
