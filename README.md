@@ -50,6 +50,21 @@ enseñan.
   número personal (el SIM de su moto g13). Solo SMS por ahora, como pidió:
   nada de WhatsApp cambia. El SMS no tiene la ventana de 24 horas de
   WhatsApp; el límite es el plan gratis de TextBee (300 SMS/mes, 50/día).
+- **El Mitote (dueña absoluta de la app de comandas)**: si Santiago le
+  pide algo del restaurante — turno, mesas, cuentas, pedidos, cobros,
+  cancelaciones, productos, inventario, caja, propinas, reservaciones,
+  estadísticas, empleados, ventas y turnos atrasados — Isis lo opera por
+  voz con la conexión a El Mitote Comandas. Tiene acceso a todo lo
+  operativo, incluyendo dar de alta y desactivar empleados, cambiar PINs
+  del personal, reasignar/fusionar/dividir cuentas y ver el historial de
+  cortes. Lee primero el catálogo (mesas y productos) y pregunta si algo
+  es ambiguo; nunca inventa montos ni IDs. Lo sensible o destructivo
+  exige confirmación por voz en dos pasos: Isis repite lo que va a hacer
+  y solo lo ejecuta cuando Santiago dice que sí. Hay dos cosas que nunca
+  hace por voz: cambiar la contraseña del propietario y la recuperación
+  de emergencia (se hacen a mano). La pre-cuenta y el ticket se generan
+  en PDF y se abren para imprimirlos (la impresión física no existe en
+  el servidor del restaurante).
 
 ## Correrlo local
 
@@ -110,6 +125,42 @@ cada llamada y las usa solo para hablar con FableAI / n8n.
 | POST | `/api/send-whatsapp` | `{ to, message, whatsappToken }` — manda un texto por WhatsApp desde el bot |
 | POST | `/api/send-sms` | `{ to, message, textbeeKey, deviceId? }` — manda un SMS desde su número (TextBee) |
 | POST | `/api/send-sms` | `{ to, message, textbeeKey }` — manda un SMS por TextBee desde tu número |
+| POST | `/api/mitote` | `{ action, params }` — proxy a El Mitote Comandas (lista blanca; lo destructivo exige `params.confirmed: true`) |
+
+## El Mitote: conexión y token (solo en el servidor)
+
+A diferencia de las demás claves, el token de El Mitote **no va en
+Configuración ni en el navegador**: vive solo como variable de entorno
+del servidor, en ambos servicios de Render:
+
+- **El Mitote** (servicio `el-mitote-comandas`): variable `ISIS_API_TOKEN`
+  con un secreto aleatorio largo. El servidor valida el Bearer contra ese
+  token y opera como propietario, marcando el actor como Isis. Si no está
+  configurado, la vía Isis responde 503.
+- **Isis** (este servicio): variable `MITOTE_API_TOKEN` con **el mismo
+  valor**. El proxy `POST /api/mitote` lo añade como `Authorization:
+  Bearer` al llamar a `https://el-mitote-comandas.onrender.com/api/...`.
+  El navegador solo manda `{ action, params }` y nunca ve el token.
+
+El token se genera una vez con `openssl rand -hex 32` y se guarda fuera
+de cualquier repo (por ejemplo `~/workspace/el-mitote-isis-token.txt`,
+con permisos 600). Si se filtra, se cambia la variable en Render en
+ambos servicios y se redespliega; no hay que cambiar la contraseña del
+propietario ni los PINs del personal.
+
+El proxy tiene lista blanca amplia: todo lo operativo (turno, mesas,
+cuentas, pedidos, cobros, cancelaciones, descuentos, productos,
+inventario, caja, propinas, tickets, reservaciones, estadísticas,
+auditoría, empleados y personal, configuración del negocio y de cocina,
+preparación). Fuera de ella quedan únicamente dos cosas: cambiar la
+contraseña del propietario y la recuperación de emergencia. Ninguna de
+las dos existe como endpoint (la contraseña es una variable del servidor
+y la recuperación es manual), así que tampoco podrían hacerse por voz;
+si Santiago las pide, Isis dice que se hacen a mano. Tampoco entran el
+login, el ingest de reservaciones ni los eventos en vivo. El servicio
+Free se duerme: la primera llamada puede tardar 30-60 s; el proxy usa
+timeout de 65 s y avisa cuando el restaurante estaba despertando, en vez
+de fallar en silencio.
 
 ## Reglas
 

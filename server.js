@@ -13,6 +13,10 @@
 //   POST /api/send-whatsapp -> { to, message, whatsappToken }
 //   POST /api/send-sms -> { to, message, textbeeKey, deviceId? } — SMS desde
 //   su propio número vía TextBee (app en su moto g13; plan gratis: 300/mes, 50/día).
+//   POST /api/mitote   -> { action, params } — proxy a El Mitote Comandas
+//   (el token ISIS vive SOLO en el servidor, en MITOTE_API_TOKEN; el
+//   navegador nunca lo ve). Lista blanca de acciones; lo destructivo
+//   exige confirmed:true (confirmación por voz en dos pasos).
 const express = require("express");
 const path = require("path");
 
@@ -32,6 +36,244 @@ const WHATSAPP_API =
 const TEXTBEE_API = "https://api.textbee.dev/api/v1/gateway/send-sms";
 // Ruta por dispositivo (cuando Santiago fija un deviceId en Configuración).
 const TEXTBEE_DEVICES = "https://api.textbee.dev/api/v1/gateway/devices";
+
+// El Mitote Comandas — proxy servidor a servidor.
+// La base se puede cambiar en local con MITOTE_API_BASE (para pruebas);
+// en producción es el servicio de Render. El token ISIS_API_TOKEN vive
+// SOLO como variable de entorno del servidor de Isis: nunca en el
+// navegador, nunca en localStorage, nunca en logs. El servicio Free se
+// duerme, así que la primera llamada puede tardar 30-60 s (timeout 65 s).
+const MITOTE_API_BASE = (
+  process.env.MITOTE_API_BASE || "https://el-mitote-comandas.onrender.com"
+).replace(/\/$/, "");
+const MITOTE_TIMEOUT_MS = 65000;
+// A partir de este tiempo de respuesta se avisa que el restaurante
+// estaba despertando (en local se puede bajar con MITOTE_SLOW_MS).
+const MITOTE_SLOW_MS =
+  parseInt(process.env.MITOTE_SLOW_MS || "10000", 10) || 10000;
+
+// Parámetros que son IDs de ruta para cada acción (se quitan del
+// cuerpo/consulta, porque ya van en la URL). OJO: un mismo nombre puede
+// ser cuerpo en una acción y ruta en otra (por ejemplo, table_id es
+// cuerpo en accounts_create pero ruta en tables_update), por eso la
+// lista es por acción y no global.
+const MITOTE_PATH_PARAMS = {
+  cash_period: ["period_id"],
+  cash_period_report_pdf: ["period_id"],
+  cash_movements_decide: ["movement_id"],
+  tables_update: ["table_id"],
+  accounts_detail: ["account_id"],
+  accounts_request_bill: ["account_id"],
+  accounts_payments: ["account_id"],
+  accounts_close: ["account_id"],
+  accounts_void: ["account_id"],
+  accounts_reopen: ["account_id"],
+  accounts_history: ["account_id"],
+  orders_add: ["account_id"],
+  accounts_prebill_pdf: ["account_id"],
+  accounts_ticket_pdf: ["account_id"],
+  requests_create: ["account_id"],
+  requests_decide: ["request_id"],
+  discounts_create: ["account_id"],
+  discounts_void: ["account_id", "discount_id"],
+  products_update: ["product_id"],
+  products_archive: ["product_id"],
+  products_restore: ["product_id"],
+  products_variants: ["product_id"],
+  products_modifier_groups: ["product_id"],
+  products_modifier_inventory: ["option_id"],
+  products_promotions: ["product_id"],
+  products_restock: ["product_id"],
+  products_inventory_adjustment: ["product_id"],
+  tips_payout: ["distribution_id", "share_id"],
+  tickets_status: ["ticket_id"],
+  reservations_status: ["reservation_id"],
+  reservations_arrive: ["reservation_id"],
+  staff_pin_change: ["user_id"],
+  users_update: ["user_id"],
+  accounts_reassign: ["account_id"],
+  accounts_rename: ["account_id"],
+  accounts_transfer_table: ["account_id"],
+  accounts_merge: ["account_id"],
+  accounts_split: ["account_id"],
+  accounts_items_repeat: ["account_id", "item_id"],
+  preparation_product_update: ["product_id"],
+  preparation_item_ready: ["item_id"],
+};
+
+// Valida un ID de ruta (solo letras, dígitos, guion y guion bajo) para
+// que nunca se pueda inyectar una ruta distinta en la URL.
+function mitoteId(params, key) {
+  const v = params[key];
+  if (v === undefined || v === null || String(v).trim() === "") {
+    throw new Error(`Falta el dato "${key}" para esta acción.`);
+  }
+  const s = String(v).trim();
+  if (!/^[A-Za-z0-9_-]+$/.test(s)) {
+    throw new Error(`El dato "${key}" no es válido.`);
+  }
+  return encodeURIComponent(s);
+}
+
+// Lista blanca de acciones de El Mitote que Isis puede hacer. Isis tiene
+// acceso ABSOLUTO a todo lo operativo: turno, mesas, cuentas, pedidos,
+// cobros, cancelaciones, descuentos, productos, inventario, caja, propinas,
+// tickets, reservaciones, estadísticas, auditoría, empleados, configuración
+// del negocio y de cocina, y preparación.
+// destructive: exige params.confirmed === true (confirmación por voz en
+// dos pasos); sin él, el proxy responde 403. pdf: el servidor devuelve
+// el PDF en base64 para que Santiago lo abra e imprima (la impresión
+// física no existe en el servidor del restaurante).
+// FUERA de esta lista (403): cambiar la contraseña del propietario y la
+// recuperación de emergencia — no existen como endpoints (la contraseña
+// es una variable del servidor y la recuperación es manual), así que
+// tampoco podrían hacerse por voz; además login, ingest de reservaciones
+// y eventos en vivo.
+const MITOTE_ACTIONS = {
+  cash_status: { method: "GET", path: () => "/api/cash", label: "estado del turno" },
+  cash_open: { method: "POST", path: () => "/api/cash/open", label: "apertura del turno" },
+  cash_close: { method: "POST", path: () => "/api/cash/close", label: "cierre del turno", destructive: true },
+  cash_history: { method: "GET", path: () => "/api/cash/history", label: "historial de caja" },
+  cash_period: { method: "GET", path: (p) => `/api/cash/periods/${mitoteId(p, "period_id")}`, label: "detalle del periodo de caja" },
+  cash_period_report_pdf: { method: "GET", path: (p) => `/api/cash/periods/${mitoteId(p, "period_id")}/report.pdf`, pdf: true, label: "reporte de caja en PDF" },
+  cash_movements_create: { method: "POST", path: () => "/api/cash/movements", label: "movimiento de caja", destructive: true },
+  cash_movements_decide: { method: "POST", path: (p) => `/api/cash/movements/${mitoteId(p, "movement_id")}/decide`, label: "decisión de movimiento de caja", destructive: true },
+  cashier_overview: { method: "GET", path: () => "/api/cashier/overview", label: "resumen de caja" },
+  tables_list: { method: "GET", path: () => "/api/tables", label: "lista de mesas" },
+  tables_create: { method: "POST", path: () => "/api/tables", label: "creación de mesa" },
+  tables_update: { method: "PUT", path: (p) => `/api/tables/${mitoteId(p, "table_id")}`, label: "edición de mesa" },
+  accounts_list: { method: "GET", path: () => "/api/accounts", label: "lista de cuentas" },
+  accounts_detail: { method: "GET", path: (p) => `/api/accounts/${mitoteId(p, "account_id")}`, label: "detalle de la cuenta" },
+  accounts_create: { method: "POST", path: () => "/api/accounts", label: "apertura de cuenta" },
+  accounts_request_bill: { method: "POST", path: (p) => `/api/accounts/${mitoteId(p, "account_id")}/request-bill`, label: "pedir la cuenta" },
+  accounts_payments: { method: "POST", path: (p) => `/api/accounts/${mitoteId(p, "account_id")}/payments`, label: "cobro de la cuenta" },
+  accounts_close: { method: "POST", path: (p) => `/api/accounts/${mitoteId(p, "account_id")}/close`, label: "cierre de la cuenta" },
+  accounts_void: { method: "POST", path: (p) => `/api/accounts/${mitoteId(p, "account_id")}/void`, label: "anulación de la cuenta", destructive: true },
+  accounts_reopen: { method: "POST", path: (p) => `/api/accounts/${mitoteId(p, "account_id")}/reopen-closed`, label: "reapertura de la cuenta", destructive: true },
+  accounts_history: { method: "GET", path: (p) => `/api/accounts/${mitoteId(p, "account_id")}/history`, label: "historial de la cuenta" },
+  orders_add: { method: "POST", path: (p) => `/api/accounts/${mitoteId(p, "account_id")}/orders`, label: "pedido a la mesa" },
+  accounts_prebill_pdf: { method: "GET", path: (p) => `/api/accounts/${mitoteId(p, "account_id")}/prebill.pdf`, pdf: true, label: "pre-cuenta en PDF" },
+  accounts_ticket_pdf: { method: "GET", path: (p) => `/api/accounts/${mitoteId(p, "account_id")}/ticket.pdf`, pdf: true, label: "ticket en PDF" },
+  requests_create: { method: "POST", path: (p) => `/api/accounts/${mitoteId(p, "account_id")}/requests`, label: "solicitud de cancelación", destructive: true },
+  requests_list: { method: "GET", path: () => "/api/requests", label: "lista de solicitudes" },
+  requests_decide: { method: "POST", path: (p) => `/api/requests/${mitoteId(p, "request_id")}/decide`, label: "decisión de cancelación", destructive: true },
+  discounts_create: { method: "POST", path: (p) => `/api/accounts/${mitoteId(p, "account_id")}/discounts`, label: "descuento", destructive: true },
+  discounts_void: { method: "POST", path: (p) => `/api/accounts/${mitoteId(p, "account_id")}/discounts/${mitoteId(p, "discount_id")}/void`, label: "anulación de descuento", destructive: true },
+  products_list: { method: "GET", path: () => "/api/products", label: "lista de productos" },
+  products_archived: { method: "GET", path: () => "/api/products/archived", label: "productos archivados" },
+  products_create: { method: "POST", path: () => "/api/products", label: "creación de producto" },
+  products_update: { method: "PUT", path: (p) => `/api/products/${mitoteId(p, "product_id")}`, label: "edición de producto" },
+  products_archive: { method: "POST", path: (p) => `/api/products/${mitoteId(p, "product_id")}/archive`, label: "archivar producto", destructive: true },
+  products_restore: { method: "POST", path: (p) => `/api/products/${mitoteId(p, "product_id")}/restore`, label: "restaurar producto" },
+  products_variants: { method: "POST", path: (p) => `/api/products/${mitoteId(p, "product_id")}/variants`, label: "variante de producto" },
+  products_modifier_groups: { method: "POST", path: (p) => `/api/products/${mitoteId(p, "product_id")}/modifier-groups`, label: "grupo de modificadores" },
+  products_modifier_inventory: { method: "PATCH", path: (p) => `/api/modifier-options/${mitoteId(p, "option_id")}/inventory`, label: "inventario de modificador" },
+  products_promotions: { method: "POST", path: (p) => `/api/products/${mitoteId(p, "product_id")}/promotions`, label: "promoción de producto" },
+  products_restock: { method: "POST", path: (p) => `/api/products/${mitoteId(p, "product_id")}/restock`, label: "reposición de inventario", destructive: true },
+  products_inventory_adjustment: { method: "POST", path: (p) => `/api/products/${mitoteId(p, "product_id")}/inventory-adjustment`, label: "ajuste de inventario", destructive: true },
+  inventory_items_create: { method: "POST", path: () => "/api/inventory/items", label: "alta de insumo" },
+  inventory_movements: { method: "GET", path: () => "/api/inventory/movements", label: "movimientos de inventario" },
+  tips_pool: { method: "GET", path: () => "/api/tips/pool/current", label: "fondo de propinas" },
+  tips_distribution: { method: "POST", path: () => "/api/tips/pool/current/distribution", label: "reparto de propinas", destructive: true },
+  tips_payout: { method: "POST", path: (p) => `/api/tips/pool/distributions/${mitoteId(p, "distribution_id")}/shares/${mitoteId(p, "share_id")}/payouts`, label: "pago de propina", destructive: true },
+  tickets_list: { method: "GET", path: () => "/api/tickets", label: "tickets de cocina y barra" },
+  tickets_status: { method: "POST", path: (p) => `/api/tickets/${mitoteId(p, "ticket_id")}/status`, label: "cambio de estado de ticket" },
+  reservations_create: { method: "POST", path: () => "/api/reservations", label: "creación de reservación" },
+  reservations_list: { method: "GET", path: () => "/api/reservations", label: "lista de reservaciones" },
+  reservations_status: { method: "POST", path: (p) => `/api/reservations/${mitoteId(p, "reservation_id")}/status`, label: "cambio de estado de reservación" },
+  reservations_arrive: { method: "POST", path: (p) => `/api/reservations/${mitoteId(p, "reservation_id")}/arrive`, label: "llegada de reservación" },
+  owner_analytics: { method: "GET", path: () => "/api/owner/analytics", label: "estadísticas del negocio" },
+  audit_list: { method: "GET", path: () => "/api/audit", label: "registro de auditoría" },
+  // Empleados (acceso absoluto: crear, editar, desactivar, cambiar PINs).
+  staff_create: { method: "POST", path: () => "/api/staff", label: "alta de empleado", destructive: true },
+  staff_pin_change: { method: "PATCH", path: (p) => `/api/staff/${mitoteId(p, "user_id")}/pin`, label: "cambio de PIN de empleado", destructive: true },
+  users_list: { method: "GET", path: () => "/api/users", label: "lista de usuarios" },
+  users_create: { method: "POST", path: () => "/api/users", label: "creación de usuario", destructive: true },
+  users_update: { method: "PATCH", path: (p) => `/api/users/${mitoteId(p, "user_id")}`, label: "edición de usuario", destructive: true },
+  // Configuración del negocio.
+  settings_get: { method: "GET", path: () => "/api/settings", label: "configuración del negocio" },
+  settings_update: { method: "PUT", path: () => "/api/settings", label: "cambio de configuración", destructive: true },
+  // Gestión de cuentas (reasignar, renombrar, mover, fusionar, dividir, repetir).
+  accounts_reassign: { method: "POST", path: (p) => `/api/accounts/${mitoteId(p, "account_id")}/reassign`, label: "reasignación de cuenta", destructive: true },
+  accounts_rename: { method: "POST", path: (p) => `/api/accounts/${mitoteId(p, "account_id")}/rename`, label: "cambio de nombre de cuenta" },
+  accounts_transfer_table: { method: "POST", path: (p) => `/api/accounts/${mitoteId(p, "account_id")}/transfer-table`, label: "cambio de mesa de la cuenta", destructive: true },
+  accounts_merge: { method: "POST", path: (p) => `/api/accounts/${mitoteId(p, "account_id")}/merge`, label: "fusión de cuentas", destructive: true },
+  accounts_split: { method: "POST", path: (p) => `/api/accounts/${mitoteId(p, "account_id")}/split`, label: "división de cuenta", destructive: true },
+  accounts_items_repeat: { method: "POST", path: (p) => `/api/accounts/${mitoteId(p, "account_id")}/items/${mitoteId(p, "item_id")}/repeat`, label: "repetir producto" },
+  // Preparación de cocina y barra.
+  preparation_config_get: { method: "GET", path: () => "/api/preparation/config", label: "configuración de cocina" },
+  preparation_config_update: { method: "PUT", path: () => "/api/preparation/config", label: "cambio de configuración de cocina", destructive: true },
+  preparation_product_update: { method: "PUT", path: (p) => `/api/preparation/products/${mitoteId(p, "product_id")}`, label: "tiempo de preparación de producto" },
+  preparation_tickets: { method: "GET", path: () => "/api/preparation/tickets", label: "tickets de preparación" },
+  preparation_item_ready: { method: "POST", path: (p) => `/api/preparation/items/${mitoteId(p, "item_id")}/ready`, label: "marcar producto listo" },
+};
+
+// Resumen corto y humano de una acción de El Mitote, para la burbuja
+// del chat. El detalle completo va en "data" y lo usa Claude para el
+// resumen final que le habla a Santiago.
+function mitoteSummary(action, data) {
+  const d = data && typeof data === "object" ? data : {};
+  const label = (MITOTE_ACTIONS[action] && MITOTE_ACTIONS[action].label) || action;
+  const id = d.id !== undefined ? d.id : d.account_id;
+  switch (action) {
+    case "cash_status":
+      return "Revisé cómo va el turno.";
+    case "cash_open":
+      return "Turno abierto.";
+    case "cash_close":
+      return "Turno cerrado.";
+    case "accounts_create":
+      return id !== undefined ? `Cuenta #${id} abierta.` : "Cuenta abierta.";
+    case "orders_add":
+      return "Pedido agregado a la cuenta.";
+    case "accounts_request_bill":
+      return "Ya pedí la cuenta.";
+    case "accounts_payments":
+      return "Cobro registrado.";
+    case "accounts_close":
+      return "Cuenta cerrada.";
+    case "accounts_void":
+      return "Cuenta anulada.";
+    case "requests_create":
+      return "Solicitud de cancelación enviada.";
+    case "requests_decide":
+      return "Decisión de cancelación registrada.";
+    case "tables_create":
+      return id !== undefined ? `Mesa #${id} creada.` : "Mesa creada.";
+    case "products_create":
+      return "Producto creado.";
+    case "products_archive":
+      return "Producto archivado.";
+    case "products_restock":
+      return "Inventario repuesto.";
+    case "products_inventory_adjustment":
+      return "Ajuste de inventario registrado.";
+    case "cash_movements_create":
+      return "Movimiento de caja registrado.";
+    case "staff_create":
+      return "Empleado dado de alta.";
+    case "staff_pin_change":
+      return "PIN de empleado cambiado.";
+    case "users_create":
+      return "Usuario creado.";
+    case "users_update":
+      return "Usuario actualizado.";
+    case "accounts_merge":
+      return "Cuentas fusionadas.";
+    case "accounts_split":
+      return "Cuenta dividida.";
+    case "accounts_reassign":
+      return "Cuenta reasignada.";
+    case "accounts_transfer_table":
+      return "Cuenta cambiada de mesa.";
+    case "accounts_rename":
+      return "Cuenta renombrada.";
+    case "preparation_item_ready":
+      return "Producto marcado como listo.";
+    default:
+      return id !== undefined ? `${label} · #${id}` : `Listo, ${label}.`;
+  }
+}
 
 // Último dato VERIFICADO de Orlando (consola de n8n, 23 nov 2026). Solo se
 // usa cuando no hay clave de API de n8n, y siempre etiquetado como
@@ -62,7 +304,17 @@ const CHAT_SYSTEM = [
   "Si te preguntan por Orlando, usa solo los datos del contexto que te pasen; si no tienes datos frescos, dilo.",
   "Al final de CADA respuesta normal, en una línea aparte, pon tu estado de ánimo así: [ánimo: alegre|frustrada|enojada|preocupada|orgullosa|bromeando|tranquila]. Usa solo una de esas palabras. Ese marcador no se lee en voz alta, solo se muestra en pantalla junto al orbe.",
   "Si Santiago te pide mandar un mensaje (por ejemplo, \"escríbele a Griselda y dile que hola\" o \"mándale un mensaje a Griselda\"), responde SOLO con un JSON, sin texto extra y SIN el marcador de ánimo. Por defecto el mensaje va por SMS desde su número personal: {\"action\":\"send_sms\",\"to\":\"<nombre o número tal como te lo dijo>\",\"message\":\"<el texto exacto del mensaje>\"}. Solo si dice explícitamente \"por WhatsApp\" usa WhatsApp: {\"action\":\"send_whatsapp\",\"to\":\"...\",\"message\":\"...\"}. Nunca inventes un número: si te da un nombre, pásalo tal cual en \"to\".",
-  "Si no te pide mandar nada, responde normal, nunca con JSON.",
+  "También eres la dueña absoluta de la app de comandas de El Mitote (la birrieria de Santiago): tienes acceso a TODO lo operativo — turno, mesas, cuentas, pedidos, cobros, cancelaciones, productos, inventario, caja, propinas, reservaciones, estadísticas, empleados, ventas y turnos atrasados. Cuando te pida algo del restaurante, lo haces tú por la conexión con El Mitote, sin mandarlo a la app.",
+  "Para operar El Mitote responde SOLO con un JSON, sin texto extra y SIN el marcador de ánimo. Acciones de lectura y de bajo riesgo: {\"action\":\"mitote\",\"mitote_action\":\"<nombre>\",\"params\":{...}}. Acciones sensibles o destructivas (cerrar turno, anular cuenta, cancelar productos, descuentos, movimientos de caja, reabrir cuentas, archivar productos, ajustes de inventario, reparto y pago de propinas, crear/editar/desactivar empleados y usuarios, cambiar PINs, reasignar/fusionar/dividir/cambiar de mesa una cuenta, cambiar la configuración del negocio o de cocina): NUNCA las mandes como \"mitote\" directo; responde SOLO con {\"action\":\"mitote_confirm\",\"summary\":\"<qué vas a hacer, con los datos exactos>\",\"mitote_action\":\"<nombre>\",\"params\":{...}} y yo le pregunto a Santiago; solo cuando diga que sí se ejecuta.",
+  "Acciones de El Mitote que puedes usar (usa solo estos nombres): cash_status, cash_open, cash_close, cash_history, cash_period, cash_period_report_pdf, cash_movements_create, cash_movements_decide, cashier_overview, tables_list, tables_create, tables_update, accounts_list, accounts_detail, accounts_create, accounts_request_bill, accounts_payments, accounts_close, accounts_void, accounts_reopen, accounts_history, orders_add, accounts_prebill_pdf, accounts_ticket_pdf, requests_create, requests_list, requests_decide, discounts_create, discounts_void, products_list, products_archived, products_create, products_update, products_archive, products_restore, products_variants, products_modifier_groups, products_modifier_inventory, products_promotions, products_restock, products_inventory_adjustment, inventory_items_create, inventory_movements, tips_pool, tips_distribution, tips_payout, tickets_list, tickets_status, reservations_create, reservations_list, reservations_status, reservations_arrive, owner_analytics, audit_list, staff_create, staff_pin_change, users_list, users_create, users_update, settings_get, settings_update, accounts_reassign, accounts_rename, accounts_transfer_table, accounts_merge, accounts_split, accounts_items_repeat, preparation_config_get, preparation_config_update, preparation_product_update, preparation_tickets, preparation_item_ready.",
+  "Nunca inventes montos ni IDs de El Mitote. Antes de actuar, lee primero el catálogo: tables_list para las mesas y products_list para los productos, y si hay dos cosas con el mismo nombre o no sabes cuál es, pregunta ('¿la birria grande o chica?', '¿qué mesa 5, la del salón o la de la terraza?'). Los precios y totales los dice el restaurante, nunca los adivines: para cobrar, primero lee la cuenta (accounts_detail) y luego pide la cuenta (accounts_request_bill), cobra (accounts_payments) y cierra (accounts_close), en ese orden.",
+  "Para crear cuentas, pedidos, pagos y movimientos, genera un client_key nuevo (un UUID) por cada intención y reenvía el mismo si reintentas, para no duplicar nada. El cierre de turno necesita el efectivo contado (counted): pídeselo a Santiago por voz y no cierres si no lo sabes. Cancelar un producto son dos pasos: requests_create y luego requests_decide (cada uno con su propia confirmación); devolver el stock solo si la preparación no empezó.",
+  "Empleados: para ver el personal usa users_list; para dar de alta a alguien usa staff_create {name, role, pin} o users_create {username, display, role, secret}; los roles posibles son admin, cashier, waiter, kitchen, bar (nunca owner). Para desactivar a alguien usa users_update {active:false}; para cambiar su PIN usa staff_pin_change {pin} (6 dígitos) o users_update {secret} (6 dígitos). NUNCA cambies el PIN del usuario propietario (el de Santiago): solo PINs del personal; si una respuesta dice owner_pin_changed, avísale de inmediato.",
+  "Ventas y turnos atrasados: para las ventas usa owner_analytics, cash_history, cash_period y cash_period_report_pdf; para un turno de un día anterior sin cerrar, revisa cash_history y el detalle del periodo (cash_period), y reabre la cuenta que haga falta con accounts_reopen. No existe forma de cerrar ni de reabrir un periodo pasado en sí: el cierre (cash_close) es solo del turno activo, y lo pasado se consulta y se reabre por cuentas.",
+  "Hay dos cosas que NUNCA haces por voz: cambiar la contraseña del propietario y la recuperación de emergencia. La contraseña del propietario no es una función de la app (es una variable del servidor) y si se cambia por error Santiago pierde el acceso a su propio sistema; esas dos se hacen a mano, y si te las pide, dile que se hacen a mano en la app.",
+  "Si te paso el resultado de una acción de El Mitote, responde SOLO con el siguiente JSON (mitote o mitote_confirm) si falta un paso para completar lo que Santiago pidió; si ya está completo, responde con el resumen final para Santiago, en español y breve, con el marcador de ánimo.",
+  "La impresión física no la puedes hacer: el servidor del restaurante no tiene impresora. Lo que sí puedes es generar la pre-cuenta o el ticket en PDF (accounts_prebill_pdf, accounts_ticket_pdf) y yo le abro el PDF a Santiago para que lo imprima.",
+  "Si no te pide mandar un mensaje ni operar El Mitote, responde normal, nunca con JSON.",
 ].join(" ");
 
 function factsContext(facts) {
@@ -605,6 +857,170 @@ app.post("/api/analyze", async (req, res) => {
       claudeLive: false,
     });
   }
+});
+
+// ---------------------------------------------------------------- el mitote
+// Proxy a El Mitote Comandas (FastAPI en Render). El navegador manda solo
+// {action, params}; el token vive SOLO en el servidor (MITOTE_API_TOKEN)
+// y se añade aquí como Authorization: Bearer. Nunca se devuelve, nunca se
+// loguea, nunca viaja al navegador. Lista blanca estricta: fuera de ella,
+// 403. Lo destructivo exige params.confirmed === true (la confirmación
+// por voz en dos pasos del cliente); sin él, 403. El servicio Free se
+// duerme: la primera llamada puede tardar 30-60 s, por eso el timeout es
+// de 65 s y si la respuesta tarda más de MITOTE_SLOW_MS se devuelve un
+// aviso (notice) para que Santiago sepa que el restaurante despertaba.
+app.post("/api/mitote", async (req, res) => {
+  const { action, params } = req.body || {};
+  if (!action || typeof action !== "string") {
+    return res.status(400).json({ error: "Falta la acción de El Mitote." });
+  }
+  const spec = MITOTE_ACTIONS[action];
+  if (!spec) {
+    return res.status(403).json({
+      error: `La acción "${action}" no está permitida para Isis.`,
+    });
+  }
+  const token = (process.env.MITOTE_API_TOKEN || "").trim();
+  if (!token) {
+    return res.status(503).json({
+      error:
+        "La conexión con El Mitote no está configurada en el servidor (falta MITOTE_API_TOKEN). Pídele a Santiago que la ponga en Render.",
+    });
+  }
+  const p =
+    params && typeof params === "object" && !Array.isArray(params)
+      ? params
+      : {};
+  if (spec.destructive && p.confirmed !== true) {
+    return res.status(403).json({
+      error:
+        "Esta acción necesita confirmación por voz: Isis debe preguntarte primero y solo se ejecuta cuando digas que sí.",
+    });
+  }
+  let path;
+  try {
+    path = spec.path(p);
+  } catch (e) {
+    return res.status(400).json({
+      error: e.message || "Faltan datos para esta acción.",
+    });
+  }
+  // El cuerpo/consulta lleva solo los parámetros de negocio: sin los IDs
+  // de ruta de ESTA acción y sin el flag de confirmación.
+  const pathKeys = new Set(MITOTE_PATH_PARAMS[action] || []);
+  const body = {};
+  for (const [k, v] of Object.entries(p)) {
+    if (k === "confirmed" || pathKeys.has(k)) continue;
+    body[k] = v;
+  }
+  const method = spec.method;
+  let url = MITOTE_API_BASE + path;
+  const fetchOptions = {
+    method,
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    // Sin redirecciones: el token nunca debe viajar a otro host.
+    redirect: "error",
+  };
+  if (method === "GET") {
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(body)) {
+      if (v === undefined || v === null) continue;
+      qs.append(k, String(v));
+    }
+    const q = qs.toString();
+    if (q) url += "?" + q;
+  } else if (Object.keys(body).length > 0) {
+    fetchOptions.body = JSON.stringify(body);
+  }
+
+  const started = Date.now();
+  let up;
+  try {
+    up = await fetchWithTimeout(url, fetchOptions, MITOTE_TIMEOUT_MS);
+  } catch (e) {
+    return res.status(502).json({
+      error:
+        "No pude hablar con el servidor del restaurante. Puede estar despertando (la primera vez tarda hasta un minuto); inténtalo de nuevo en un momento.",
+    });
+  }
+  const tookMs = Date.now() - started;
+  const notice =
+    tookMs > MITOTE_SLOW_MS
+      ? `El servidor del restaurante estaba dormido y tardó ${Math.round(
+          tookMs / 1000
+        )} segundos en despertar.`
+      : null;
+
+  if (!up.ok) {
+    let detail = "";
+    try {
+      const errData = await up.json();
+      detail = errData?.detail || errData?.error || "";
+      if (typeof detail !== "string") detail = JSON.stringify(detail);
+    } catch (e) {
+      detail = "";
+    }
+    if (up.status === 401) {
+      return res.status(502).json({
+        error:
+          "El Mitote rechazó la credencial de Isis (token inválido o revocado). Revisa MITOTE_API_TOKEN en Render.",
+      });
+    }
+    if (up.status === 503) {
+      return res.status(502).json({
+        error: "El servidor del restaurante no está disponible ahora mismo.",
+      });
+    }
+    const base =
+      up.status === 409
+        ? "El Mitote no lo permite"
+        : `El Mitote respondió con ${up.status}`;
+    return res.status(502).json({
+      error: detail ? `${base}: ${detail}` : `${base}.`,
+      notice,
+    });
+  }
+
+  if (spec.pdf) {
+    const buf = Buffer.from(await up.arrayBuffer());
+    const filename =
+      action === "accounts_ticket_pdf"
+        ? `ticket-${p.account_id || "cuenta"}.pdf`
+        : action === "cash_period_report_pdf"
+          ? `corte-${p.period_id || "turno"}.pdf`
+          : `precuenta-${p.account_id || "cuenta"}.pdf`;
+    return res.json({
+      ok: true,
+      action,
+      summary: mitoteSummary(action, {
+        account_id: p.account_id,
+        period_id: p.period_id,
+      }),
+      notice,
+      pdfBase64: buf.toString("base64"),
+      filename,
+      contentType: "application/pdf",
+      tookMs,
+    });
+  }
+
+  let data = null;
+  try {
+    data = await up.json();
+  } catch (e) {
+    data = null;
+  }
+  return res.json({
+    ok: true,
+    action,
+    summary: mitoteSummary(action, data),
+    notice,
+    data,
+    tookMs,
+  });
 });
 
 // ---------------------------------------------------------------- arranque
