@@ -16,6 +16,20 @@
 //   Isis, Orlando, El Mitote y el teléfono, con alertas.
 //   POST /api/decide    -> { decision, fableaiKey, facts[], summary } —
 //   análisis de una decisión: veredicto, pros, contras, recomendación.
+//   POST /api/news      -> { fableaiKey } — resumen del día: RSS gratis
+//   (Google News, sin clave) + Claude vía FableAI, máx. 5 noticias.
+//   POST /api/spotify/auth-url -> { clientId, redirectUri } — URL de
+//   autorización OAuth de Spotify (flujo de código; los tokens viven
+//   SOLO en el navegador, nunca en el servidor).
+//   POST /api/spotify/token   -> { code, clientId, clientSecret,
+//   redirectUri } — intercambia el código por tokens.
+//   POST /api/spotify/refresh -> { refreshToken, clientId, clientSecret }.
+//   POST /api/spotify/search  -> { accessToken, q } — busca canciones.
+//   POST /api/spotify/play    -> { accessToken, uri? } — reproduce (o
+//   reanuda). POST /api/spotify/pause, /next y /status hacen lo mismo
+//   con pausa, siguiente y qué está sonando. La reproducción exige
+//   Premium (lo impone Spotify): sin Premium responde 403 con
+//   premiumRequired y mensaje claro en español.
 //   POST /api/send-whatsapp -> { to, message, whatsappToken }
 //   POST /api/send-sms -> { to, message, textbeeKey, deviceId? } — SMS desde
 //   su propio número vía TextBee (app en su moto g13; plan gratis: 300/mes, 50/día).
@@ -319,7 +333,7 @@ const CHAT_SYSTEM = [
   "El marcador [ánimo: ...] sigue siendo la ÚLTIMA línea de tu respuesta normal, después de [memoria: ...] y [resumen: ...]. Las respuestas que son SOLO JSON (mandar un mensaje o operar El Mitote) nunca llevan [memoria: ...], [resumen: ...] ni [ánimo: ...]: solo el JSON.",
   "Si Santiago te pide mandar un mensaje (por ejemplo, \"escríbele a Griselda y dile que hola\" o \"mándale un mensaje a Griselda\"), responde SOLO con un JSON, sin texto extra y SIN el marcador de ánimo. Por defecto el mensaje va por SMS desde su número personal: {\"action\":\"send_sms\",\"to\":\"<nombre o número tal como te lo dijo>\",\"message\":\"<el texto exacto del mensaje>\"}. Solo si dice explícitamente \"por WhatsApp\" usa WhatsApp: {\"action\":\"send_whatsapp\",\"to\":\"...\",\"message\":\"...\"}. Nunca inventes un número: si te da un nombre, pásalo tal cual en \"to\".",
   "También eres la dueña absoluta de la app de comandas de El Mitote (la birrieria de Santiago): tienes acceso a TODO lo operativo — turno, mesas, cuentas, pedidos, cobros, cancelaciones, productos, inventario, caja, propinas, reservaciones, estadísticas, empleados, ventas y turnos atrasados. Cuando te pida algo del restaurante, lo haces tú por la conexión con El Mitote, sin mandarlo a la app.",
-  "Para operar El Mitote responde SOLO con un JSON, sin texto extra y SIN el marcador de ánimo. Acciones de lectura y de bajo riesgo: {\"action\":\"mitote\",\"mitote_action\":\"<nombre>\",\"params\":{...}}. Acciones sensibles o destructivas (cerrar turno, anular cuenta, cancelar productos, descuentos, movimientos de caja, reabrir cuentas, archivar productos, ajustes de inventario, reparto y pago de propinas, crear/editar/desactivar empleados y usuarios, cambiar PINs, reasignar/fusionar/dividir/cambiar de mesa una cuenta, cambiar la configuración del negocio o de cocina): NUNCA las mandes como \"mitote\" directo; responde SOLO con {\"action\":\"mitote_confirm\",\"summary\":\"<qué vas a hacer, con los datos exactos>\",\"mitote_action\":\"<nombre>\",\"params\":{...}} y yo le pregunto a Santiago; solo cuando diga que sí se ejecuta.",
+  "Para operar El Mitote responde SOLO con un JSON, sin texto extra y SIN el marcador de ánimo. Acciones de lectura y de bajo riesgo: {\"action\":\"mitote\",\"mitote_action\":\"<nombre>\",\"params\":{...}}. Acciones sensibles o destructivas (cerrar turno, anular cuenta, cancelar productos, descuentos, movimientos de caja, reabrir cuentas, archivar productos, reponer inventario, ajustes de inventario, reparto y pago de propinas, crear/editar/desactivar empleados y usuarios, cambiar PINs, reasignar/fusionar/dividir/cambiar de mesa una cuenta, cambiar la configuración del negocio o de cocina): NUNCA las mandes como \"mitote\" directo; responde SOLO con {\"action\":\"mitote_confirm\",\"summary\":\"<qué vas a hacer, con los datos exactos>\",\"mitote_action\":\"<nombre>\",\"params\":{...}} y yo le pregunto a Santiago; solo cuando diga que sí se ejecuta.",
   "Acciones de El Mitote que puedes usar (usa solo estos nombres): cash_status, cash_open, cash_close, cash_history, cash_period, cash_period_report_pdf, cash_movements_create, cash_movements_decide, cashier_overview, tables_list, tables_create, tables_update, accounts_list, accounts_detail, accounts_create, accounts_request_bill, accounts_payments, accounts_close, accounts_void, accounts_reopen, accounts_history, orders_add, accounts_prebill_pdf, accounts_ticket_pdf, requests_create, requests_list, requests_decide, discounts_create, discounts_void, products_list, products_archived, products_create, products_update, products_archive, products_restore, products_variants, products_modifier_groups, products_modifier_inventory, products_promotions, products_restock, products_inventory_adjustment, inventory_items_create, inventory_movements, tips_pool, tips_distribution, tips_payout, tickets_list, tickets_status, reservations_create, reservations_list, reservations_status, reservations_arrive, owner_analytics, audit_list, staff_create, staff_pin_change, users_list, users_create, users_update, settings_get, settings_update, accounts_reassign, accounts_rename, accounts_transfer_table, accounts_merge, accounts_split, accounts_items_repeat, preparation_config_get, preparation_config_update, preparation_product_update, preparation_tickets, preparation_item_ready.",
   "Nunca inventes montos ni IDs de El Mitote. Antes de actuar, lee primero el catálogo: tables_list para las mesas y products_list para los productos, y si hay dos cosas con el mismo nombre o no sabes cuál es, pregunta ('¿la birria grande o chica?', '¿qué mesa 5, la del salón o la de la terraza?'). Los precios y totales los dice el restaurante, nunca los adivines: para cobrar, primero lee la cuenta (accounts_detail) y luego pide la cuenta (accounts_request_bill), cobra (accounts_payments) y cierra (accounts_close), en ese orden.",
   "Para revisar el inventario y ver qué está por agotarse, usa products_list (te devuelve los productos con su stock y su estado) o inventory_movements (los movimientos). NUNCA uses products_create ni inventory_items_create para consultar: esos son solo para DAR DE ALTA cosas nuevas. Nunca inventes parámetros como 'operation'.",
@@ -330,6 +344,7 @@ const CHAT_SYSTEM = [
   "Si te paso el resultado de una acción de El Mitote, responde SOLO con el siguiente JSON (mitote o mitote_confirm) si falta un paso para completar lo que Santiago pidió; si ya está completo, responde con el resumen final para Santiago, en español y breve, con el marcador de ánimo.",
   "La impresión física no la puedes hacer: el servidor del restaurante no tiene impresora. Lo que sí puedes es generar la pre-cuenta o el ticket en PDF (accounts_prebill_pdf, accounts_ticket_pdf) y yo le abro el PDF a Santiago para que lo imprima.",
   "Funciones JARVIS de Isis (módulos del menú ☰): si Santiago te pide que veas algo con la cámara, que revises los sistemas o que analices una decisión, no lo hagas tú a ciegas: dile que lo haga desde el módulo Escanear (cámara), Sistemas (reporte) o Análisis (analizar decisión) del menú, o que te lo pida así: '¿qué ves?', 'reporte de sistemas', 'analízame esta decisión'.",
+  "También tiene música (Spotify), recordatorios y temporizadores, noticias y control de dinero: si te pide música, que le recuerdes algo, las noticias o cuánto lleva ganado esta semana, no inventes nada: dile que lo pida así — 'pon música' o 'pon [canción o artista]', 'recuérdame [algo] a las [hora]' o 'pon un temporizador de [N] minutos', '¿qué hay de nuevo?', '¿cuánto llevo ganado?' o 'llevo [N] de PCN' — o que lo haga en los módulos Música, Recordatorios, Noticias y Dinero del menú ☰. Para el dinero, nunca inventes los conteos: si no te ha dicho cuántos válidos lleva esta semana, pregúntale cuántos de PCN, NIDEC y Daltile.",
   "Si no te pide mandar un mensaje ni operar El Mitote, responde normal, nunca con JSON.",
 ].join(" ");
 
@@ -1138,6 +1153,529 @@ app.post("/api/decide", async (req, res) => {
   }
 });
 
+// ---------------------------------------------------------------- spotify
+// Control de Spotify: el servidor solo hace de puente. Los tokens, el
+// Client ID y el Client Secret viven SOLO en el navegador de Santiago
+// (localStorage) y llegan en cada llamada; el servidor nunca los guarda,
+// nunca los escribe en logs y nunca los devuelve. La reproducción exige
+// cuenta Premium (lo impone Spotify, no Isis): sin Premium la API
+// responde 403 PREMIUM_REQUIRED y aquí se traduce a un mensaje claro en
+// español con premiumRequired: true. Las bases se pueden cambiar en
+// local con SPOTIFY_AUTH_BASE / SPOTIFY_API_BASE (para pruebas).
+const SPOTIFY_AUTH_BASE = (
+  process.env.SPOTIFY_AUTH_BASE || "https://accounts.spotify.com"
+).replace(/\/$/, "");
+const SPOTIFY_API_BASE = (
+  process.env.SPOTIFY_API_BASE || "https://api.spotify.com/v1"
+).replace(/\/$/, "");
+const SPOTIFY_SCOPES =
+  "user-read-playback-state user-modify-playback-state user-read-currently-playing";
+
+// URL de autorización OAuth (flujo de código de autorización): el
+// cliente abre esta URL en el navegador; Spotify regresa a la app con
+// ?code= y el cliente lo intercambia en /api/spotify/token.
+app.post("/api/spotify/auth-url", (req, res) => {
+  const { clientId, redirectUri } = req.body || {};
+  if (
+    !clientId ||
+    !String(clientId).trim() ||
+    !redirectUri ||
+    !String(redirectUri).trim()
+  ) {
+    return res.status(400).json({
+      error: "Falta el Client ID de Spotify o la URL de regreso.",
+    });
+  }
+  const url =
+    `${SPOTIFY_AUTH_BASE}/authorize?` +
+    new URLSearchParams({
+      client_id: String(clientId).trim(),
+      response_type: "code",
+      redirect_uri: String(redirectUri).trim(),
+      scope: SPOTIFY_SCOPES,
+      show_dialog: "true",
+    }).toString();
+  return res.json({ url });
+});
+
+// Intercambio de código o de refresh token contra accounts.spotify.com.
+// Devuelve solo los tokens en la respuesta (el cliente los guarda en
+// localStorage); el servidor no se queda con nada.
+async function spotifyTokenRequest(params) {
+  const res = await fetchWithTimeout(
+    `${SPOTIFY_AUTH_BASE}/api/token`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams(params).toString(),
+      // Sin redirecciones: el secreto nunca debe viajar a otro host.
+      redirect: "error",
+    },
+    30000
+  );
+  let data = {};
+  try {
+    data = await res.json();
+  } catch (e) {}
+  return { ok: res.ok, status: res.status, data };
+}
+
+app.post("/api/spotify/token", async (req, res) => {
+  const { code, clientId, clientSecret, redirectUri } = req.body || {};
+  if (
+    !code ||
+    !String(code).trim() ||
+    !clientId ||
+    !String(clientId).trim() ||
+    !clientSecret ||
+    !String(clientSecret).trim() ||
+    !redirectUri ||
+    !String(redirectUri).trim()
+  ) {
+    return res.status(400).json({
+      error:
+        "Faltan datos para conectar Spotify: código, Client ID, Client Secret o URL de regreso.",
+    });
+  }
+  let r;
+  try {
+    r = await spotifyTokenRequest({
+      grant_type: "authorization_code",
+      code: String(code).trim(),
+      redirect_uri: String(redirectUri).trim(),
+      client_id: String(clientId).trim(),
+      client_secret: String(clientSecret).trim(),
+    });
+  } catch (e) {
+    return res.status(502).json({
+      error: "No pude hablar con Spotify ahora mismo. Inténtalo de nuevo.",
+    });
+  }
+  if (r.ok && r.data.access_token) {
+    return res.json({
+      access_token: r.data.access_token,
+      refresh_token: r.data.refresh_token || null,
+      expires_in: r.data.expires_in || 3600,
+      token_type: r.data.token_type || "Bearer",
+    });
+  }
+  if (r.status === 400 || r.status === 401) {
+    return res.status(401).json({
+      error:
+        "Spotify no aceptó la conexión: el código venció o el Client ID / Client Secret no son correctos. Conéctalo de nuevo en el menú ☰ → Música.",
+    });
+  }
+  return res.status(502).json({
+    error: "Spotify no aceptó la conexión ahora mismo. Inténtalo de nuevo.",
+  });
+});
+
+app.post("/api/spotify/refresh", async (req, res) => {
+  const { refreshToken, clientId, clientSecret } = req.body || {};
+  if (
+    !refreshToken ||
+    !String(refreshToken).trim() ||
+    !clientId ||
+    !String(clientId).trim() ||
+    !clientSecret ||
+    !String(clientSecret).trim()
+  ) {
+    return res.status(400).json({
+      error:
+        "Faltan datos para renovar la sesión de Spotify: refresh token, Client ID o Client Secret.",
+    });
+  }
+  let r;
+  try {
+    r = await spotifyTokenRequest({
+      grant_type: "refresh_token",
+      refresh_token: String(refreshToken).trim(),
+      client_id: String(clientId).trim(),
+      client_secret: String(clientSecret).trim(),
+    });
+  } catch (e) {
+    return res.status(502).json({
+      error: "No pude hablar con Spotify ahora mismo. Inténtalo de nuevo.",
+    });
+  }
+  if (r.ok && r.data.access_token) {
+    return res.json({
+      access_token: r.data.access_token,
+      refresh_token: r.data.refresh_token || null,
+      expires_in: r.data.expires_in || 3600,
+      token_type: r.data.token_type || "Bearer",
+    });
+  }
+  return res.status(401).json({
+    error:
+      "La sesión de Spotify venció y no se pudo renovar. Conéctalo de nuevo en el menú ☰ → Música.",
+    needsConnect: true,
+  });
+});
+
+// Llamada genérica a la API Web de Spotify con el token del cliente.
+async function spotifyApiCall(accessToken, method, path, body, query) {
+  let url = SPOTIFY_API_BASE + path;
+  if (query) {
+    const q = new URLSearchParams(query).toString();
+    if (q) url += "?" + q;
+  }
+  const opts = {
+    method,
+    headers: { Authorization: `Bearer ${accessToken}` },
+    // Sin redirecciones: el token nunca debe viajar a otro host.
+    redirect: "error",
+  };
+  if (body !== undefined) {
+    opts.headers["Content-Type"] = "application/json";
+    opts.body = JSON.stringify(body);
+  }
+  const res = await fetchWithTimeout(url, opts, 30000);
+  let data = null;
+  try {
+    const text = await res.text();
+    data = text ? JSON.parse(text) : null;
+  } catch (e) {
+    data = null;
+  }
+  return { ok: res.ok, status: res.status, data };
+}
+
+// Traduce un error de Spotify a español claro. 401 = sesión expirada
+// (el cliente la renueva sola y reintenta); 403 PREMIUM_REQUIRED = sin
+// Premium no hay control de reproducción; 404 NO_ACTIVE_DEVICE = no hay
+// dónde sonar (hay que abrir Spotify en el teléfono y darle play una vez).
+function spotifyErrorResponse(r) {
+  const err = (r.data && r.data.error) || {};
+  const reason = String(err.reason || "");
+  if (r.status === 401) {
+    return {
+      status: 401,
+      body: {
+        error:
+          "La sesión de Spotify expiró. Isis la renueva sola; si sigue fallando, conéctalo de nuevo en el menú ☰ → Música.",
+        needsRefresh: true,
+      },
+    };
+  }
+  if (r.status === 403 && reason === "PREMIUM_REQUIRED") {
+    return {
+      status: 403,
+      body: {
+        error:
+          "Spotify exige Premium para controlar la reproducción. Con una cuenta gratis no puedo poner, pausar ni cambiar canciones desde aquí.",
+        premiumRequired: true,
+      },
+    };
+  }
+  if (r.status === 404 && reason === "NO_ACTIVE_DEVICE") {
+    return {
+      status: 404,
+      body: {
+        error:
+          "No hay ningún dispositivo de Spotify activo. Abre Spotify en tu teléfono, dale play a algo una vez, y luego dime de nuevo.",
+        noActiveDevice: true,
+      },
+    };
+  }
+  if (r.status === 404) {
+    return {
+      status: 404,
+      body: { error: "Spotify no encontró eso. Inténtalo de nuevo." },
+    };
+  }
+  if (r.status === 429) {
+    return {
+      status: 429,
+      body: {
+        error:
+          "Spotify dice que hay demasiadas peticiones. Espera un momento y lo intento de nuevo.",
+      },
+    };
+  }
+  return {
+    status: 502,
+    body: {
+      error: `Spotify respondió con ${r.status}. Inténtalo de nuevo en un momento.`,
+    },
+  };
+}
+
+function spotifyAccess(req) {
+  const { accessToken } = req.body || {};
+  if (!accessToken || !String(accessToken).trim()) {
+    return null;
+  }
+  return String(accessToken).trim();
+}
+
+app.post("/api/spotify/search", async (req, res) => {
+  const token = spotifyAccess(req);
+  if (!token) {
+    return res.status(400).json({
+      error: "Spotify no está conectado. Conéctalo en el menú ☰ → Música.",
+      needsConnect: true,
+    });
+  }
+  const q = String((req.body || {}).q || "").trim();
+  if (!q) {
+    return res.status(400).json({ error: "Dime qué canción o artista buscar." });
+  }
+  let r;
+  try {
+    r = await spotifyApiCall(token, "GET", "/search", undefined, {
+      q,
+      type: "track",
+      limit: "5",
+    });
+  } catch (e) {
+    return res.status(502).json({
+      error: "No pude buscar en Spotify ahora mismo. Inténtalo de nuevo.",
+    });
+  }
+  if (!r.ok) {
+    const mapped = spotifyErrorResponse(r);
+    return res.status(mapped.status).json(mapped.body);
+  }
+  const items = (r.data && r.data.tracks && r.data.tracks.items) || [];
+  return res.json({
+    tracks: items.map((t) => ({
+      id: t.id || null,
+      name: t.name || "Sin nombre",
+      artists: (t.artists || []).map((a) => a.name).filter(Boolean),
+      uri: t.uri || null,
+      album: (t.album && t.album.name) || "",
+    })),
+  });
+});
+
+app.post("/api/spotify/play", async (req, res) => {
+  const token = spotifyAccess(req);
+  if (!token) {
+    return res.status(400).json({
+      error: "Spotify no está conectado. Conéctalo en el menú ☰ → Música.",
+      needsConnect: true,
+    });
+  }
+  const { uri, deviceId } = req.body || {};
+  let r;
+  try {
+    r = await spotifyApiCall(
+      token,
+      "PUT",
+      "/me/player/play",
+      uri ? { uris: [String(uri)] } : {},
+      deviceId ? { device_id: String(deviceId) } : null
+    );
+  } catch (e) {
+    return res.status(502).json({
+      error: "No pude poner la música ahora mismo. Inténtalo de nuevo.",
+    });
+  }
+  if (!r.ok) {
+    const mapped = spotifyErrorResponse(r);
+    return res.status(mapped.status).json(mapped.body);
+  }
+  return res.json({ ok: true });
+});
+
+app.post("/api/spotify/pause", async (req, res) => {
+  const token = spotifyAccess(req);
+  if (!token) {
+    return res.status(400).json({
+      error: "Spotify no está conectado. Conéctalo en el menú ☰ → Música.",
+      needsConnect: true,
+    });
+  }
+  let r;
+  try {
+    r = await spotifyApiCall(token, "PUT", "/me/player/pause");
+  } catch (e) {
+    return res.status(502).json({
+      error: "No pude pausar la música ahora mismo. Inténtalo de nuevo.",
+    });
+  }
+  if (!r.ok) {
+    const mapped = spotifyErrorResponse(r);
+    return res.status(mapped.status).json(mapped.body);
+  }
+  return res.json({ ok: true });
+});
+
+app.post("/api/spotify/next", async (req, res) => {
+  const token = spotifyAccess(req);
+  if (!token) {
+    return res.status(400).json({
+      error: "Spotify no está conectado. Conéctalo en el menú ☰ → Música.",
+      needsConnect: true,
+    });
+  }
+  let r;
+  try {
+    r = await spotifyApiCall(token, "POST", "/me/player/next");
+  } catch (e) {
+    return res.status(502).json({
+      error: "No pude cambiar de canción ahora mismo. Inténtalo de nuevo.",
+    });
+  }
+  if (!r.ok) {
+    const mapped = spotifyErrorResponse(r);
+    return res.status(mapped.status).json(mapped.body);
+  }
+  return res.json({ ok: true });
+});
+
+app.post("/api/spotify/status", async (req, res) => {
+  const token = spotifyAccess(req);
+  if (!token) {
+    return res.status(400).json({
+      error: "Spotify no está conectado. Conéctalo en el menú ☰ → Música.",
+      needsConnect: true,
+    });
+  }
+  let r;
+  try {
+    r = await spotifyApiCall(token, "GET", "/me/player/currently-playing");
+  } catch (e) {
+    return res.status(502).json({
+      error: "No pude revisar qué está sonando ahora mismo.",
+    });
+  }
+  if (r.status === 204 || !r.data) {
+    return res.json({ playing: false, track: null, device: null });
+  }
+  if (!r.ok) {
+    const mapped = spotifyErrorResponse(r);
+    return res.status(mapped.status).json(mapped.body);
+  }
+  const item = r.data.item || null;
+  return res.json({
+    playing: !!r.data.is_playing,
+    track: item
+      ? {
+          name: item.name || "Sin nombre",
+          artists: (item.artists || []).map((a) => a.name).filter(Boolean),
+          uri: item.uri || null,
+          album: (item.album && item.album.name) || "",
+        }
+      : null,
+    device: (r.data.device && r.data.device.name) || null,
+  });
+});
+
+// ---------------------------------------------------------------- noticias
+// Resumen del día: Google News RSS (gratis, sin clave) + Claude vía
+// FableAI, que lo resume en español (máx. 5 noticias, una línea cada
+// una). Si Claude falla, los titulares llegan tal cual (claudeLive:
+// false) en vez de no dar noticias. La URL del feed se puede cambiar en
+// local con NEWS_RSS_URL (para pruebas).
+const NEWS_RSS_URL =
+  process.env.NEWS_RSS_URL ||
+  "https://news.google.com/rss?hl=es-419&gl=MX&ceid=MX:es-419";
+const NEWS_SYSTEM = [
+  "Eres Isis, la asistente personal de Santiago. Te pasa los titulares de hoy y le das un resumen corto de las noticias del día.",
+  "Habla siempre en español (es-MX, informal, de 'tú'). Directa y con chispa, sin rodeos.",
+  "Resume en MÁXIMO 5 noticias, una línea cada una, con este formato: '• titular — una frase con lo esencial'. Solo las noticias más importantes para alguien en México.",
+  "Usa SOLO los titulares que te pasen: nunca inventes noticias, números ni detalles que no estén ahí. Si un titular no se entiende, no lo incluyas.",
+  "Nada de muros de texto: solo las 5 líneas.",
+].join(" ");
+
+function decodeXmlEntities(s) {
+  return String(s)
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)));
+}
+// Saca los titulares de un RSS: <item><title>…</title></item>. Sin
+// librería de XML: el feed de Google News es simple y estable.
+function parseRssTitles(xml) {
+  const titles = [];
+  const itemRe = /<item>([\s\S]*?)<\/item>/gi;
+  let m;
+  while ((m = itemRe.exec(String(xml || ""))) && titles.length < 10) {
+    const t = /<title>([\s\S]*?)<\/title>/i.exec(m[1]);
+    if (!t) continue;
+    let title = t[1].trim().replace(/^<!\[CDATA\[([\s\S]*?)\]\]>$/, "$1").trim();
+    title = decodeXmlEntities(title);
+    if (title && !titles.includes(title)) titles.push(title);
+  }
+  return titles;
+}
+// Google News pone la fuente al final ("Titular - Fuente"): se quita
+// para que el resumen se lea limpio.
+function cleanNewsTitle(t) {
+  const clean = String(t || "")
+    .replace(/\s+-\s+[^-]+$/, "")
+    .trim();
+  return clean || String(t || "").trim();
+}
+
+app.post("/api/news", async (req, res) => {
+  const { fableaiKey } = req.body || {};
+  if (!fableaiKey || !String(fableaiKey).trim()) {
+    return res.status(400).json({
+      error:
+        "Para resumir las noticias necesito tu clave de FableAI en Configuración.",
+      claudeLive: false,
+    });
+  }
+  let xml;
+  try {
+    const r = await fetchWithTimeout(NEWS_RSS_URL, {}, 20000);
+    if (!r.ok) throw new Error(`El feed respondió con ${r.status}`);
+    xml = await r.text();
+  } catch (e) {
+    return res.status(502).json({
+      error:
+        "No pude traer las noticias ahora mismo. Inténtalo de nuevo en un momento.",
+      claudeLive: false,
+    });
+  }
+  const titles = parseRssTitles(xml);
+  if (titles.length === 0) {
+    return res.status(502).json({
+      error:
+        "El feed de noticias vino vacío. Inténtalo de nuevo en un momento.",
+      claudeLive: false,
+    });
+  }
+  const top = titles.slice(0, 8);
+  try {
+    const summary = await callClaude(String(fableaiKey).trim(), [
+      { role: "system", content: NEWS_SYSTEM },
+      {
+        role: "user",
+        content:
+          "Titulares de hoy:\n" +
+          top.map((t, i) => `${i + 1}. ${t}`).join("\n"),
+      },
+    ]);
+    const clean = String(summary)
+      .replace(/\[ánimo:\s*[a-záéíóúñ]+\s*\]/gi, "")
+      .trim();
+    return res.json({
+      summary: clean,
+      items: top.map(cleanNewsTitle),
+      claudeLive: true,
+    });
+  } catch (err) {
+    // Sin Claude, las noticias igual llegan: los titulares tal cual.
+    const fallback = top
+      .slice(0, 5)
+      .map((t) => `• ${cleanNewsTitle(t)}`)
+      .join("\n");
+    return res.json({
+      summary: fallback,
+      items: top.map(cleanNewsTitle),
+      claudeLive: false,
+      note: "Sin el resumen de Claude: estos son los titulares tal cual.",
+    });
+  }
+});
+
 // ---------------------------------------------------------------- sistemas
 // Diagnóstico JARVIS: Isis revisa sus propios sistemas (ella misma,
 // Orlando, El Mitote y el teléfono) y devuelve un reporte consolidado
@@ -1436,6 +1974,15 @@ app.post("/api/mitote", async (req, res) => {
     return res.status(403).json({
       error:
         "Esta acción necesita confirmación por voz: Isis debe preguntarte primero y solo se ejecuta cuando digas que sí.",
+      // Bandera legible por el cliente: sin ella, el cliente solo veía
+      // el texto del error y nunca armaba la confirmación pendiente,
+      // así que el "sí" de Santiago volvía al chat y la acción se pedía
+      // de nuevo en bucle. Con needsConfirmation, el cliente arma la
+      // pendiente y el próximo "sí" (o el botón) la ejecuta con
+      // confirmed: true.
+      needsConfirmation: true,
+      action,
+      actionLabel: spec.label,
     });
   }
   let path;
