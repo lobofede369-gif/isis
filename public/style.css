@@ -635,6 +635,75 @@ main { max-width: 640px; margin: 0 auto; padding: 8px 16px 32px; position: relat
 }
 .wake-hint { text-align: center; font-size: 0.8rem; margin: 6px 0 0; }
 
+/* ---------------------------------------------------------- Alertas proactivas */
+.alert-banner {
+  display: flex; align-items: center; gap: 10px;
+  background: rgba(255, 170, 0, 0.1);
+  border: 1px solid rgba(255, 209, 102, 0.6);
+  border-radius: 12px;
+  padding: 12px 14px; margin-top: 14px;
+  box-shadow: 0 0 18px rgba(255, 209, 102, 0.15);
+  color: #ffe9a8;
+}
+.alerts-text { flex: 1; font-size: 0.95rem; line-height: 1.4; }
+.alert-dismiss { width: 32px; height: 32px; font-size: 0.9rem; flex-shrink: 0; }
+
+/* ---------------------------------------------------------- Escaneo visual */
+.scan-preview {
+  display: block; width: 100%; max-height: 320px; object-fit: contain;
+  border-radius: 12px; border: 1px solid rgba(0, 212, 255, 0.3);
+  margin: 12px 0;
+  background: rgba(0, 0, 0, 0.4);
+}
+
+/* ---------------------------------------------------------- Sistemas */
+.systems-result .sys-verdict {
+  font-family: var(--font-display);
+  font-size: 0.95rem; letter-spacing: 1.5px; text-transform: uppercase;
+  color: var(--neon-bright); text-shadow: 0 0 12px rgba(0, 212, 255, 0.5);
+  margin: 4px 0 12px;
+}
+.sys-row {
+  display: flex; align-items: baseline; gap: 10px;
+  padding: 8px 0; border-bottom: 1px solid rgba(0, 212, 255, 0.12);
+}
+.sys-row:last-of-type { border-bottom: none; }
+.sys-dot { font-size: 0.9rem; }
+.sys-row.ok .sys-dot { color: #5cffc8; text-shadow: 0 0 8px rgba(0, 255, 170, 0.5); }
+.sys-row.warn .sys-dot { color: var(--gold); text-shadow: 0 0 8px rgba(255, 209, 102, 0.5); }
+.sys-row.down .sys-dot { color: var(--danger); text-shadow: 0 0 8px rgba(255, 84, 112, 0.5); }
+.sys-row.unknown .sys-dot { color: var(--muted); }
+.sys-label { font-weight: 700; color: var(--text); min-width: 110px; }
+.sys-detail { color: var(--muted); font-size: 0.92rem; flex: 1; }
+.sys-alerts { margin-top: 12px; }
+.sys-alert {
+  background: rgba(255, 209, 102, 0.08);
+  border: 1px solid rgba(255, 209, 102, 0.45);
+  border-radius: 8px; padding: 10px 12px; margin: 8px 0;
+  color: #ffe9a8;
+}
+
+/* ---------------------------------------------------------- Análisis de decisiones */
+.decision-section { margin-top: 16px; padding-top: 14px; border-top: 1px solid rgba(0, 212, 255, 0.18); }
+.decision-section h3 {
+  margin: 0 0 8px;
+  font-family: var(--font-display);
+  font-size: 0.8rem; font-weight: 700; letter-spacing: 2.5px; text-transform: uppercase;
+  color: var(--neon-bright);
+  text-shadow: 0 0 12px rgba(0, 212, 255, 0.5);
+}
+.dec-verdict {
+  font-family: var(--font-display);
+  font-size: 0.95rem; letter-spacing: 1px;
+  color: var(--neon-bright); text-shadow: 0 0 12px rgba(0, 212, 255, 0.5);
+  margin: 10px 0 6px;
+}
+.dec-head { font-weight: 700; color: var(--text); margin: 10px 0 4px; }
+.dec-list { margin: 0 0 6px; padding-left: 20px; line-height: 1.5; }
+.dec-list.pros li::marker { color: #5cffc8; }
+.dec-list.cons li::marker { color: var(--danger); }
+.dec-rec { margin: 12px 0 0; line-height: 1.5; }
+
 /* ---------------------------------------------------------- Dock mínimo (escribir + enviar + micrófono) */
 .dock-min {
   display: flex; align-items: center; gap: 10px;

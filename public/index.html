@@ -38,6 +38,13 @@
       <p id="voice-note" class="voice-note" hidden></p>
     </section>
 
+    <!-- Alertas proactivas: solo se ve si algo está mal -->
+    <div id="alerts-banner" class="alert-banner" hidden>
+      <span id="alerts-text" class="alerts-text"></span>
+      <button id="alerts-view" class="small-btn" type="button">Ver sistemas</button>
+      <button id="alerts-dismiss" class="icon-btn alert-dismiss" type="button" aria-label="Descartar alerta">✕</button>
+    </div>
+
     <!-- Conversación (plegable: colapsada por defecto, solo la última respuesta) -->
     <section class="card chat-card collapsed" id="chat-card">
       <button id="chat-toggle" class="chat-toggle" type="button" aria-expanded="false" aria-controls="chat-body">
@@ -84,6 +91,8 @@
       <button type="button" class="menu-item" id="menu-contacts" data-panel="panel-contacts">👥 Contactos</button>
       <button type="button" class="menu-item" id="menu-orlando" data-panel="panel-orlando">🤖 Orlando · Bot PCN</button>
       <button type="button" class="menu-item" id="menu-analyze" data-panel="panel-analyze">📊 Análisis</button>
+      <button type="button" class="menu-item" id="menu-scan" data-panel="panel-scan">🔍 Escanear</button>
+      <button type="button" class="menu-item" id="menu-systems" data-panel="panel-systems">🖥️ Sistemas</button>
     </nav>
     <p class="drawer-hint">Todo lo de Isis vive aquí. Toca un módulo para abrirlo.</p>
   </aside>
@@ -227,6 +236,44 @@
       <div id="analysis" class="analysis">
         <p class="muted">Isis revisa Orlando, tus reclutadores y tus pendientes, y te recomienda decisiones.</p>
       </div>
+      <div class="decision-section">
+        <h3>Analizar una decisión</h3>
+        <div class="fact-form">
+          <input id="decision-input" type="text" placeholder="Ej. ¿Me conviene pagar n8n o migrar el bot a Render?" autocomplete="off" />
+          <button id="btn-decide" class="small-btn" type="button">Analizar decisión</button>
+        </div>
+        <div id="decision-result" class="decision-result">
+          <p class="muted">Isis te da su veredicto: pros, contras y recomendación, sin muros de texto.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Escanear (visión JARVIS) -->
+    <section id="panel-scan" class="card panel-section" hidden>
+      <h2>Escanear</h2>
+      <p class="muted">Toma una foto con la cámara trasera y Isis te dice qué ve, como JARVIS.</p>
+      <input id="scan-file" type="file" accept="image/*" capture="environment" hidden />
+      <button id="btn-scan" class="primary-btn" type="button">📷 Tomar foto y escanear</button>
+      <img id="scan-preview" class="scan-preview" alt="Foto escaneada" hidden />
+      <label class="field">
+        <span>Pregunta sobre la foto</span>
+        <input id="scan-question" type="text" value="¿Qué ves en esta foto?" autocomplete="off" />
+      </label>
+      <div id="scan-result" class="analysis">
+        <p class="muted">Todavía no hay escaneo. La foto se analiza con Claude y se reduce a 1024 px antes de mandarse.</p>
+      </div>
+    </section>
+
+    <!-- Sistemas (diagnóstico JARVIS) -->
+    <section id="panel-systems" class="card panel-section" hidden>
+      <div class="card-head">
+        <h2>Sistemas</h2>
+        <button id="btn-systems" class="small-btn">Revisar sistemas</button>
+      </div>
+      <div id="systems-result" class="systems-result">
+        <p class="muted">Isis revisa sus sistemas sola al abrir la app, y aquí cuando tú se lo pidas: ella misma, Orlando, El Mitote y tu teléfono.</p>
+      </div>
+      <p class="muted small">La revisión es al abrir la app y bajo demanda, no un servicio en segundo plano: en Render Free Isis se duerme y no puede vigilar sola.</p>
     </section>
   </div>
 

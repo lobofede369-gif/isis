@@ -52,6 +52,8 @@
     ["panel-contacts", "Contactos"],
     ["panel-orlando", "Orlando · Bot PCN"],
     ["panel-analyze", "Análisis"],
+    ["panel-scan", "Escanear"],
+    ["panel-systems", "Sistemas"],
   ];
 
   // ---------------------------------------------------------- claves
@@ -1737,6 +1739,32 @@
       setTimeout(maybeStartWake, 1200);
       return;
     }
+    // Funciones JARVIS: escaneo visual, reporte de sistemas y análisis
+    // de decisiones. Se detectan aquí (voz o texto) y no pasan por el
+    // chat normal.
+    if (isVisionRequest(text)) {
+      openPanel("panel-scan");
+      setOrbStatus("Toma la foto y te digo qué veo");
+      speak("Toma la foto y te digo qué veo.");
+      triggerScanCamera();
+      setTimeout(maybeStartWake, 1200);
+      return;
+    }
+    if (isSystemsRequest(text)) {
+      await runSystemsCheck(true, false);
+      setTimeout(maybeStartWake, 1200);
+      return;
+    }
+    const decisionText = extractDecision(text);
+    if (decisionText !== null) {
+      if (!decisionText) {
+        sayFinal("Análisis", "¿Qué decisión quieres que analice? Dímela y la reviso.");
+      } else {
+        await runDecide(decisionText, true);
+      }
+      setTimeout(maybeStartWake, 1200);
+      return;
+    }
     setThinking(true);
 
     const { fableaiKey, n8nKey } = getKeys();
@@ -1901,6 +1929,384 @@
     }
   });
 
+  // ---------------------------------------------------------- funciones JARVIS
+  // Escaneo visual, reporte de sistemas, alertas proactivas y análisis
+  // de decisiones. Todo vive en el menú hamburguesa; la pantalla
+  // principal sigue minimalista.
+  function isVisionRequest(text) {
+    return /¿?qu[eé] ves|escanea(r)?\b|qu[eé] hay (aqu[ií]|alrededor|en (la |esta )?foto)/i.test(text);
+  }
+  function isSystemsRequest(text) {
+    return /reporte de sistemas|revisa(r)? (los )?sistemas|diagn[oó]stico (de )?sistemas|c[oó]mo van los sistemas|estado de los sistemas|todos los sistemas/i.test(text);
+  }
+  function isDecisionRequest(text) {
+    return /anal[ií]zame (esta )?(decisi[oó]n|esto)|analiza (esta |mi )?decisi[oó]n|¿?me conviene|deber[ií]a|pros y contras|qu[eé] me recomiendas/i.test(text);
+  }
+  // Saca la decisión del mensaje: si solo dice "analízame esta decisión"
+  // sin decir cuál, devuelve "" para preguntarle cuál es. Si no es una
+  // petición de decisión, devuelve null.
+  function extractDecision(text) {
+    const t = String(text || "").trim().replace(/^isis[,\s:–—-]*/i, "");
+    let m;
+    m = t.match(/anal[ií]zame (?:esta )?(?:decisi[oó]n|esto)[\s:,\-–—]*/i);
+    if (m) return t.slice(m[0].length).trim();
+    m = t.match(/analiza (?:esta |mi )?decisi[oó]n[\s:,\-–—]*/i);
+    if (m) return t.slice(m[0].length).trim();
+    if (/¿?me conviene/i.test(t) || /deber[ií]a/i.test(t)) return t;
+    m = t.match(/pros y contras (?:de )?(.+)/i);
+    if (m) return m[1].trim();
+    m = t.match(/qu[eé] me recomiendas (?:sobre |para )?(.+)/i);
+    if (m) return m[2].trim();
+    if (isDecisionRequest(t)) return "";
+    return null;
+  }
+
+  // --- escaneo visual (cámara trasera, foto única) ---
+  const scanFile = $("scan-file");
+  const scanPreview = $("scan-preview");
+  const scanQuestion = $("scan-question");
+  const scanResult = $("scan-result");
+  function triggerScanCamera() {
+    if (scanFile) {
+      try {
+        scanFile.click();
+      } catch (e) {}
+    }
+  }
+  const btnScan = $("btn-scan");
+  if (btnScan) btnScan.addEventListener("click", triggerScanCamera);
+  // Reduce la foto a 1024 px (JPEG 0.82) antes de mandarla: una foto
+  // de teléfono pesa varios MB y el servidor no necesita más. Si el
+  // navegador no puede reducirla, se manda la original.
+  function downscalePhoto(dataUrl) {
+    return new Promise((resolve) => {
+      try {
+        if (typeof Image === "undefined") return resolve(dataUrl);
+        const img = new Image();
+        img.onload = () => {
+          try {
+            const max = 1024;
+            const scale = Math.min(1, max / Math.max(img.width, img.height));
+            const w = Math.max(1, Math.round(img.width * scale));
+            const h = Math.max(1, Math.round(img.height * scale));
+            const canvas = document.createElement("canvas");
+            canvas.width = w;
+            canvas.height = h;
+            const ctx = canvas.getContext("2d");
+            if (!ctx) return resolve(dataUrl);
+            ctx.drawImage(img, 0, 0, w, h);
+            resolve(canvas.toDataURL("image/jpeg", 0.82));
+          } catch (e) {
+            resolve(dataUrl);
+          }
+        };
+        img.onerror = () => resolve(dataUrl);
+        img.src = dataUrl;
+      } catch (e) {
+        resolve(dataUrl);
+      }
+    });
+  }
+  function readFileAsDataURL(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = () => reject(new Error("read"));
+      reader.readAsDataURL(file);
+    });
+  }
+  async function analyzePhoto(dataUrl) {
+    const { fableaiKey } = getKeys();
+    const question =
+      (scanQuestion && scanQuestion.value.trim()) || "¿Qué ves en esta foto?";
+    lastUserText = question;
+    if (scanResult)
+      scanResult.innerHTML = '<p class="loading">ESCANEANDO…</p>';
+    setOrbStatus("Isis está mirando la foto…");
+    setThinking(true);
+    try {
+      const { ok, data } = await postJSON("/api/vision", {
+        image: dataUrl,
+        question,
+        fableaiKey,
+      });
+      setThinking(false);
+      if (!ok || !data.analysis) {
+        const msg =
+          (data && data.error) || "No pude analizar la foto ahora mismo.";
+        if (scanResult) scanResult.innerHTML = `<p>${escapeHtml(msg)}</p>`;
+        sayFinal("Escaneo", msg);
+        setOrbStatus(idleStatus());
+        return;
+      }
+      const { text: cleanAnalysis, mood } = processClaudeReply(data.analysis);
+      if (mood) setMood(mood);
+      if (scanResult)
+        scanResult.textContent = cleanAnalysis || "Sin análisis.";
+      addBubble("isis", cleanAnalysis, "Escaneo");
+      speak(cleanAnalysis);
+      recordExchange(cleanAnalysis);
+    } catch (e) {
+      setThinking(false);
+      const msg = "No pude analizar la foto ahora mismo.";
+      if (scanResult) scanResult.innerHTML = `<p>${escapeHtml(msg)}</p>`;
+      sayFinal("Escaneo", msg);
+    }
+    setOrbStatus(idleStatus());
+  }
+  if (scanFile) {
+    scanFile.addEventListener("change", async () => {
+      const file = scanFile.files && scanFile.files[0];
+      scanFile.value = "";
+      if (!file) return;
+      try {
+        const original = await readFileAsDataURL(file);
+        if (scanPreview) {
+          scanPreview.src = original;
+          scanPreview.hidden = false;
+        }
+        const small = await downscalePhoto(original);
+        await analyzePhoto(small);
+      } catch (e) {
+        const msg = "No pude leer esa foto. Tómala de nuevo.";
+        if (scanResult) scanResult.innerHTML = `<p>${escapeHtml(msg)}</p>`;
+        sayFinal("Escaneo", msg);
+      }
+    });
+  }
+
+  // --- reporte de sistemas (JARVIS) ---
+  const systemsResult = $("systems-result");
+  let systemsAutoChecked = false;
+  function getBatteryInfo() {
+    if (!navigator.getBattery) return Promise.resolve(null);
+    return Promise.race([
+      navigator
+        .getBattery()
+        .then((b) => ({ level: b.level, charging: !!b.charging }))
+        .catch(() => null),
+      new Promise((r) => setTimeout(() => r(null), 2000)),
+    ]);
+  }
+  function renderSystemsReport(report) {
+    if (!systemsResult) return;
+    const checks = (report && report.checks) || {};
+    const order = [
+      ["isis", "Isis"],
+      ["orlando", "Orlando · Bot PCN"],
+      ["mitote", "El Mitote"],
+      ["phone", "Teléfono"],
+    ];
+    const rows = order
+      .map(([key, label]) => {
+        const c = checks[key] || { status: "unknown", detail: "Sin datos." };
+        const cls =
+          c.status === "ok"
+            ? "ok"
+            : c.status === "warn"
+              ? "warn"
+              : c.status === "down"
+                ? "down"
+                : "unknown";
+        const dot =
+          c.status === "ok"
+            ? "●"
+            : c.status === "warn"
+              ? "◐"
+              : c.status === "down"
+                ? "✕"
+                : "○";
+        return `<div class="sys-row ${cls}"><span class="sys-dot" aria-hidden="true">${dot}</span><span class="sys-label">${escapeHtml(label)}</span><span class="sys-detail">${escapeHtml(c.detail || "")}</span></div>`;
+      })
+      .join("");
+    const alerts = Array.isArray(report.alerts) ? report.alerts : [];
+    const alertsHtml = alerts.length
+      ? `<div class="sys-alerts">${alerts
+          .map(
+            (a) =>
+              `<p class="sys-alert"><strong>⚠ ${escapeHtml(a.message)}</strong><br><span class="muted">${escapeHtml(a.action || "")}</span></p>`
+          )
+          .join("")}</div>`
+      : "";
+    systemsResult.innerHTML = `
+      <p class="sys-verdict">${escapeHtml(report.verdict || "")}</p>
+      ${rows}
+      ${alertsHtml}
+      <p class="muted small">Revisado ${report.checkedAt ? new Date(report.checkedAt).toLocaleString("es-MX") : "ahora mismo"}.</p>`;
+  }
+  function systemsSpokenSummary(report) {
+    const alerts = Array.isArray(report.alerts) ? report.alerts : [];
+    if (!alerts.length) return "Todos los sistemas operando.";
+    if (alerts.length === 1)
+      return `Ojo, Santiago: ${alerts[0].message} ${alerts[0].action || ""}`;
+    return `Ojo, Santiago: hay ${alerts.length} alertas. ${alerts
+      .map((a) => a.message)
+      .join(" ")}`;
+  }
+  // Revisa los sistemas. speakIt: lo dice por voz (reporte pedido).
+  // auto: revisión al abrir la app — solo avisa si hay alertas, y no
+  // bloquea nada: en segundo plano, una sola vez por carga.
+  async function runSystemsCheck(speakIt, auto) {
+    const { n8nKey } = getKeys();
+    if (systemsResult && !auto)
+      systemsResult.innerHTML = '<p class="loading">REVISANDO SISTEMAS…</p>';
+    if (!auto) setOrbStatus("Isis está revisando los sistemas…");
+    let battery = null;
+    try {
+      battery = await getBatteryInfo();
+    } catch (e) {}
+    try {
+      const { ok, data } = await postJSON("/api/systems", { n8nKey, battery });
+      if (!ok || !data.checks) {
+        const msg =
+          (data && data.error) || "No pude revisar los sistemas ahora mismo.";
+        if (!auto && systemsResult)
+          systemsResult.innerHTML = `<p>${escapeHtml(msg)}</p>`;
+        if (speakIt) sayFinal("Sistemas", msg);
+        if (!auto) setOrbStatus(idleStatus());
+        return null;
+      }
+      renderSystemsReport(data);
+      const alerts = Array.isArray(data.alerts) ? data.alerts : [];
+      if (speakIt) {
+        const spoken = systemsSpokenSummary(data);
+        addBubble("isis", spoken, "Sistemas");
+        speak(spoken);
+        recordExchange(spoken);
+      } else if (auto && alerts.length) {
+        // Al abrir: solo si hay algo mal — banner visible + se lo dice
+        // (si no está hablando de otra cosa en ese momento).
+        showAlerts(alerts);
+        const spoken = systemsSpokenSummary(data);
+        addBubble("isis", spoken, "Sistemas · alerta");
+        if (!speakingNow && !thinkingNow) speak(spoken);
+        recordExchange(spoken);
+      } else if (auto) {
+        hideAlerts();
+      }
+      if (!auto) setOrbStatus(idleStatus());
+      return data;
+    } catch (e) {
+      const msg = "No pude revisar los sistemas ahora mismo.";
+      if (!auto && systemsResult)
+        systemsResult.innerHTML = `<p>${escapeHtml(msg)}</p>`;
+      if (speakIt) sayFinal("Sistemas", msg);
+      if (!auto) setOrbStatus(idleStatus());
+      return null;
+    }
+  }
+  const btnSystems = $("btn-systems");
+  if (btnSystems)
+    btnSystems.addEventListener("click", () => runSystemsCheck(true, false));
+
+  // --- alertas proactivas (banner visible en la pantalla principal) ---
+  const alertsBanner = $("alerts-banner");
+  const alertsText = $("alerts-text");
+  function showAlerts(alerts) {
+    if (!alertsBanner || !alertsText) return;
+    const list = Array.isArray(alerts) ? alerts : [];
+    if (!list.length) {
+      hideAlerts();
+      return;
+    }
+    alertsText.textContent =
+      list.length === 1
+        ? `⚠ ${list[0].message}`
+        : `⚠ Hay ${list.length} alertas: ${list[0].message}`;
+    alertsBanner.hidden = false;
+  }
+  function hideAlerts() {
+    if (alertsBanner) alertsBanner.hidden = true;
+  }
+  const alertsViewBtn = $("alerts-view");
+  if (alertsViewBtn)
+    alertsViewBtn.addEventListener("click", () => {
+      hideAlerts();
+      openPanel("panel-systems");
+    });
+  const alertsDismissBtn = $("alerts-dismiss");
+  if (alertsDismissBtn)
+    alertsDismissBtn.addEventListener("click", hideAlerts);
+
+  // --- análisis de decisiones (modo del módulo Análisis) ---
+  const decisionInput = $("decision-input");
+  const decisionResult = $("decision-result");
+  async function runDecide(decision, fromVoice) {
+    const { fableaiKey } = getKeys();
+    const d = String(decision || "").trim();
+    if (!d) {
+      if (decisionResult)
+        decisionResult.innerHTML =
+          "<p>Dime qué decisión quieres analizar.</p>";
+      return null;
+    }
+    if (decisionResult)
+      decisionResult.innerHTML = '<p class="loading">ANALIZANDO DECISIÓN…</p>';
+    setOrbStatus("Isis está analizando la decisión…");
+    setThinking(true);
+    try {
+      const { ok, data } = await postJSON("/api/decide", {
+        decision: d,
+        fableaiKey,
+        facts: loadFacts(),
+        summary: loadSummary(),
+      });
+      setThinking(false);
+      if (!ok || !data) {
+        const msg =
+          (data && data.error) ||
+          "No pude analizar la decisión ahora mismo.";
+        if (decisionResult)
+          decisionResult.innerHTML = `<p>${escapeHtml(msg)}</p>`;
+        sayFinal("Análisis", msg);
+        setOrbStatus(idleStatus());
+        return null;
+      }
+      // Resultado estructurado: veredicto, pros, contras, recomendación.
+      const pros = Array.isArray(data.pros) ? data.pros : [];
+      const cons = Array.isArray(data.cons) ? data.cons : [];
+      const verdict = String(data.verdict || "").trim();
+      const rec = String(data.recommendation || "").trim();
+      if (decisionResult) {
+        decisionResult.innerHTML = `
+          <p class="dec-verdict">${escapeHtml(verdict || "Sin veredicto.")}</p>
+          ${pros.length ? `<p class="dec-head">A favor</p><ul class="dec-list pros">${pros.map((p) => `<li>${escapeHtml(p)}</li>`).join("")}</ul>` : ""}
+          ${cons.length ? `<p class="dec-head">En contra</p><ul class="dec-list cons">${cons.map((c) => `<li>${escapeHtml(c)}</li>`).join("")}</ul>` : ""}
+          ${rec ? `<p class="dec-rec"><strong>Recomendación:</strong> ${escapeHtml(rec)}</p>` : ""}`;
+      }
+      // Se habla solo lo corto: el veredicto y la recomendación.
+      const spoken = rec
+        ? `Mi veredicto: ${verdict} ${rec}`
+        : verdict || "No tengo un veredicto claro.";
+      addBubble("isis", spoken, "Análisis · decisión");
+      speak(spoken);
+      if (fromVoice) recordExchange(spoken);
+      setOrbStatus(idleStatus());
+      return data;
+    } catch (e) {
+      setThinking(false);
+      const msg = "No pude analizar la decisión ahora mismo.";
+      if (decisionResult)
+        decisionResult.innerHTML = `<p>${escapeHtml(msg)}</p>`;
+      sayFinal("Análisis", msg);
+      setOrbStatus(idleStatus());
+      return null;
+    }
+  }
+  const btnDecide = $("btn-decide");
+  if (btnDecide) {
+    btnDecide.addEventListener("click", () => {
+      const d = decisionInput ? decisionInput.value.trim() : "";
+      if (!d) {
+        if (decisionResult)
+          decisionResult.innerHTML =
+            "<p>Escribe la decisión arriba primero.</p>";
+        return;
+      }
+      runDecide(d, false);
+    });
+  }
+
   // ---------------------------------------------------------- menú hamburguesa y paneles
   // La pantalla principal es solo orbe + estado + conversación colapsada
   // + dock mínimo. TODO lo demás vive en el menú hamburguesa: elegir un
@@ -1950,6 +2356,8 @@
     ["menu-contacts", "panel-contacts"],
     ["menu-orlando", "panel-orlando"],
     ["menu-analyze", "panel-analyze"],
+    ["menu-scan", "panel-scan"],
+    ["menu-systems", "panel-systems"],
   ];
   MENU_ITEMS.forEach(([menuId, panelId]) => {
     const item = $(menuId);
@@ -2076,6 +2484,16 @@
   // hechos, contactos, memoria y la revisión de Orlando (la hace el
   // servidor); las voces del teléfono solo se listan, no se descargan.
   updateWakeUI();
+  // Revisión proactiva de sistemas al abrir: en segundo plano, una
+  // sola vez por carga, sin bloquear. Solo avisa si algo está mal (no
+  // es un servicio en segundo plano: en Render Free Isis se duerme y
+  // no puede vigilar sola).
+  setTimeout(() => {
+    if (!systemsAutoChecked) {
+      systemsAutoChecked = true;
+      runSystemsCheck(false, true);
+    }
+  }, 4000);
   // Conversación plegable: empieza colapsada (solo la vista previa).
   if (chatToggle) {
     chatToggle.addEventListener("click", () => {
